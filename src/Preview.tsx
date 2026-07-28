@@ -168,8 +168,8 @@ export default function Preview({ surfaces, heightmap, settings, viewMode, visib
     mount.appendChild(renderer.domElement)
     const controls = new OrbitControls(camera, renderer.domElement)
     controls.enableDamping = true
-    controls.minPolarAngle = 0.05
-    controls.maxPolarAngle = Math.PI / 2 - 0.02
+    controls.minPolarAngle = THREE.MathUtils.degToRad(5)
+    controls.maxPolarAngle = THREE.MathUtils.degToRad(175)
     controls.target.set(0, 0, 0)
 
     const clippingPlane = new THREE.Plane(new THREE.Vector3(1, 0, 0), 0)
