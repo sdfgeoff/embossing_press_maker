@@ -111,72 +111,89 @@ function sphericalErosion(heightmap, heights, radius, timings: TimingEntry[], la
   return dilated
 }
 
-function makeSolidSurface(heightmap, topPoints, bottomZ, material, name) {
-  const { cols, rows } = heightmap
-  const positions = []
-  const indices = []
-  for (const point of topPoints) positions.push(point.x, point.y, point.z)
-  const bottomStart = positions.length / 3
-  for (const point of topPoints) positions.push(point.x, point.y, bottomZ)
+const topologyCache = new Map<string, THREE.BufferAttribute>()
 
+function getHeightfieldTopology(cols, rows, reverse = false) {
+  const key = `${cols}x${rows}:${reverse ? 'reverse' : 'forward'}`
+  const cached = topologyCache.get(key)
+  if (cached) return cached
+
+  const surfaceVertices = cols * rows
+  const boundaryLength = 2 * cols + 2 * rows - 4
+  const indexCount = (cols - 1) * (rows - 1) * 12 + boundaryLength * 6
+  const indices = surfaceVertices * 2 > 65535
+    ? new Uint32Array(indexCount)
+    : new Uint16Array(indexCount)
+  let cursor = 0
+  const writeTriangle = (a, b, c) => {
+    if (reverse) {
+      indices[cursor++] = a
+      indices[cursor++] = c
+      indices[cursor++] = b
+    } else {
+      indices[cursor++] = a
+      indices[cursor++] = b
+      indices[cursor++] = c
+    }
+  }
   for (let row = 0; row < rows - 1; row += 1) {
     for (let col = 0; col < cols - 1; col += 1) {
       const a = row * cols + col
       const b = a + 1
       const c = a + cols
       const d = c + 1
-      indices.push(a, b, d, a, d, c)
-      indices.push(bottomStart + a, bottomStart + d, bottomStart + b, bottomStart + a, bottomStart + c, bottomStart + d)
+      writeTriangle(a, b, d)
+      writeTriangle(a, d, c)
+      writeTriangle(surfaceVertices + a, surfaceVertices + d, surfaceVertices + b)
+      writeTriangle(surfaceVertices + a, surfaceVertices + c, surfaceVertices + d)
     }
   }
-  const boundary = []
-  for (let col = 0; col < cols; col += 1) boundary.push(col)
-  for (let row = 1; row < rows; row += 1) boundary.push(row * cols + cols - 1)
-  for (let col = cols - 2; col >= 0; col -= 1) boundary.push((rows - 1) * cols + col)
-  for (let row = rows - 2; row > 0; row -= 1) boundary.push(row * cols)
+  const boundary = new Uint32Array(boundaryLength)
+  let boundaryCursor = 0
+  for (let col = 0; col < cols; col += 1) boundary[boundaryCursor++] = col
+  for (let row = 1; row < rows; row += 1) boundary[boundaryCursor++] = row * cols + cols - 1
+  for (let col = cols - 2; col >= 0; col -= 1) boundary[boundaryCursor++] = (rows - 1) * cols + col
+  for (let row = rows - 2; row > 0; row -= 1) boundary[boundaryCursor++] = row * cols
   for (let i = 0; i < boundary.length; i += 1) {
     const a = boundary[i]
     const b = boundary[(i + 1) % boundary.length]
-    indices.push(a, bottomStart + a, bottomStart + b, a, bottomStart + b, b)
+    writeTriangle(a, surfaceVertices + a, surfaceVertices + b)
+    writeTriangle(a, surfaceVertices + b, b)
   }
-  const geometry = new THREE.BufferGeometry()
-  geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3))
-  geometry.setIndex(indices)
-  geometry.computeVertexNormals()
-  geometry.userData.name = name
-  return new THREE.Mesh(geometry, material)
+  const attribute = new THREE.BufferAttribute(indices, 1)
+  topologyCache.set(key, attribute)
+  return attribute
 }
 
-function makeLayer(heightmap, topPoints, bottomPoints, material, name) {
-  const { cols, rows } = heightmap
-  const positions = []
-  const indices = []
-  for (const point of topPoints) positions.push(point.x, point.y, point.z)
-  const bottomStart = positions.length / 3
-  for (const point of bottomPoints) positions.push(point.x, point.y, point.z)
-  for (let row = 0; row < rows - 1; row += 1) {
-    for (let col = 0; col < cols - 1; col += 1) {
-      const a = row * cols + col
-      const b = a + 1
-      const c = a + cols
-      const d = c + 1
-      indices.push(a, b, d, a, d, c)
-      indices.push(bottomStart + a, bottomStart + d, bottomStart + b, bottomStart + a, bottomStart + c, bottomStart + d)
+function createHeightfieldPositions(heightmap, upperZ, lowerZ) {
+  const { cols, rows, pitchX, pitchY } = heightmap
+  const surfaceVertices = cols * rows
+  const positions = new Float32Array(surfaceVertices * 2 * 3)
+  const originX = -(cols - 1) * pitchX / 2
+  const originY = -(rows - 1) * pitchY / 2
+  for (let row = 0; row < rows; row += 1) {
+    const y = originY + row * pitchY
+    for (let col = 0; col < cols; col += 1) {
+      const index = row * cols + col
+      const x = originX + col * pitchX
+      const upperOffset = index * 3
+      const lowerOffset = (surfaceVertices + index) * 3
+      positions[upperOffset] = x
+      positions[upperOffset + 1] = y
+      positions[upperOffset + 2] = typeof upperZ === 'number' ? upperZ : upperZ[index]
+      positions[lowerOffset] = x
+      positions[lowerOffset + 1] = y
+      positions[lowerOffset + 2] = typeof lowerZ === 'number' ? lowerZ : lowerZ[index]
     }
   }
-  const boundary = []
-  for (let col = 0; col < cols; col += 1) boundary.push(col)
-  for (let row = 1; row < rows; row += 1) boundary.push(row * cols + cols - 1)
-  for (let col = cols - 2; col >= 0; col -= 1) boundary.push((rows - 1) * cols + col)
-  for (let row = rows - 2; row > 0; row -= 1) boundary.push(row * cols)
-  for (let i = 0; i < boundary.length; i += 1) {
-    const a = boundary[i]
-    const b = boundary[(i + 1) % boundary.length]
-    indices.push(a, bottomStart + a, bottomStart + b, a, bottomStart + b, b)
-  }
+  return positions
+}
+
+function makeHeightfieldMesh(heightmap, upperZ, lowerZ, material, name, reverse = false) {
+  const positions = createHeightfieldPositions(heightmap, upperZ, lowerZ)
   const geometry = new THREE.BufferGeometry()
   geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3))
-  geometry.setIndex(indices)
+  geometry.setIndex(getHeightfieldTopology(heightmap.cols, heightmap.rows, reverse))
   geometry.computeVertexNormals()
   geometry.userData.name = name
   return new THREE.Mesh(geometry, material)
@@ -200,24 +217,6 @@ export function buildMeshes(heightmap, settings) {
     femaleZ = sphericalDilation(heightmap, z, settings.materialThickness, timings, 'top dilation')
   }
 
-  const pointsStart = performance.now()
-  const malePoints = []
-  const femalePoints = []
-  const sheetTopPoints = []
-  const sheetBottomPoints = []
-  for (let row = 0; row < heightmap.rows; row += 1) {
-    for (let col = 0; col < heightmap.cols; col += 1) {
-      const index = row * heightmap.cols + col
-      const x = -settings.dieWidth / 2 + col * heightmap.pitchX
-      const y = -settings.dieHeight / 2 + row * heightmap.pitchY
-      const point = new THREE.Vector3(x, y, maleZ[index])
-      malePoints.push(point)
-      femalePoints.push(new THREE.Vector3(x, y, femaleZ[index]))
-      sheetBottomPoints.push(point.clone())
-      sheetTopPoints.push(new THREE.Vector3(x, y, femaleZ[index]))
-    }
-  }
-  timings.push({ phase: 'Create surface point arrays', durationMs: performance.now() - pointsStart })
   const maleMaterial = new THREE.MeshStandardMaterial({ color: 0xbec5ca, roughness: 0.32, metalness: 0.68, side: THREE.DoubleSide })
   const femaleMaterial = new THREE.MeshStandardMaterial({ color: 0x6f7c83, roughness: 0.38, metalness: 0.58, side: THREE.DoubleSide })
   const sheetMaterial = new THREE.MeshStandardMaterial({ color: 0xd5a947, roughness: 0.6, metalness: 0.05, side: THREE.DoubleSide })
@@ -225,17 +224,17 @@ export function buildMeshes(heightmap, settings) {
   let maxFemaleZ = -Infinity
   for (let index = 0; index < maleZ.length; index += 1) {
     minZ = Math.min(minZ, maleZ[index])
-    maxFemaleZ = Math.max(maxFemaleZ, femalePoints[index].z)
+    maxFemaleZ = Math.max(maxFemaleZ, femaleZ[index])
   }
   const maleStart = performance.now()
-  const male = makeSolidSurface(heightmap, malePoints, minZ - settings.backingThickness, maleMaterial, 'male')
-  timings.push({ phase: 'Build male indexed mesh + normals', durationMs: performance.now() - maleStart })
+  const male = makeHeightfieldMesh(heightmap, maleZ, minZ - settings.backingThickness, maleMaterial, 'male')
+  timings.push({ phase: 'Build male typed mesh + normals', durationMs: performance.now() - maleStart })
   const femaleStart = performance.now()
-  const female = makeSolidSurface(heightmap, femalePoints, maxFemaleZ + settings.backingThickness, femaleMaterial, 'female')
-  timings.push({ phase: 'Build female indexed mesh + normals', durationMs: performance.now() - femaleStart })
+  const female = makeHeightfieldMesh(heightmap, femaleZ, maxFemaleZ + settings.backingThickness, femaleMaterial, 'female', true)
+  timings.push({ phase: 'Build female typed mesh + normals', durationMs: performance.now() - femaleStart })
   const sheetStart = performance.now()
-  const sheet = makeLayer(heightmap, sheetTopPoints, sheetBottomPoints, sheetMaterial, 'sheet')
-  timings.push({ phase: 'Build material indexed mesh + normals', durationMs: performance.now() - sheetStart })
+  const sheet = makeHeightfieldMesh(heightmap, femaleZ, maleZ, sheetMaterial, 'sheet')
+  timings.push({ phase: 'Build material typed mesh + normals', durationMs: performance.now() - sheetStart })
   const totalDuration = performance.now() - totalStart
   console.groupCollapsed(`Embossing geometry: ${totalDuration.toFixed(1)} ms (${settings.surfaceReference})`)
   console.table(timings.map(({ phase, durationMs, details = '' }) => ({
