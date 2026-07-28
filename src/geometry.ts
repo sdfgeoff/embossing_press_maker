@@ -81,6 +81,25 @@ function displacements(heightmap, settings) {
   return result
 }
 
+function sphericalDilation(heightmap, heights, radius) {
+  return computeSphericalEnvelope({
+    heights,
+    cols: heightmap.cols,
+    rows: heightmap.rows,
+    pitchX: heightmap.pitchX,
+    pitchY: heightmap.pitchY,
+    radius,
+  })
+}
+
+function sphericalErosion(heightmap, heights, radius) {
+  const inverted = new Float32Array(heights.length)
+  for (let index = 0; index < heights.length; index += 1) inverted[index] = -heights[index]
+  const dilated = sphericalDilation(heightmap, inverted, radius)
+  for (let index = 0; index < dilated.length; index += 1) dilated[index] = -dilated[index]
+  return dilated
+}
+
 function makeSolidSurface(heightmap, topPoints, bottomZ, material, name) {
   const { cols, rows } = heightmap
   const positions = []
@@ -154,14 +173,17 @@ function makeLayer(heightmap, topPoints, bottomPoints, material, name) {
 
 export function buildMeshes(heightmap, settings) {
   const z = displacements(heightmap, settings)
-  const femaleZ = computeSphericalEnvelope({
-    heights: z,
-    cols: heightmap.cols,
-    rows: heightmap.rows,
-    pitchX: heightmap.pitchX,
-    pitchY: heightmap.pitchY,
-    radius: settings.materialThickness,
-  })
+  let maleZ = z
+  let femaleZ = z
+  if (settings.surfaceReference === 'top') {
+    maleZ = sphericalErosion(heightmap, z, settings.materialThickness)
+  } else if (settings.surfaceReference === 'midpoint') {
+    const halfThickness = settings.materialThickness / 2
+    maleZ = sphericalErosion(heightmap, z, halfThickness)
+    femaleZ = sphericalDilation(heightmap, z, halfThickness)
+  } else {
+    femaleZ = sphericalDilation(heightmap, z, settings.materialThickness)
+  }
   const malePoints = []
   const femalePoints = []
   const sheetTopPoints = []
@@ -171,7 +193,7 @@ export function buildMeshes(heightmap, settings) {
       const index = row * heightmap.cols + col
       const x = -settings.dieWidth / 2 + col * heightmap.pitchX
       const y = -settings.dieHeight / 2 + row * heightmap.pitchY
-      const point = new THREE.Vector3(x, y, z[index])
+      const point = new THREE.Vector3(x, y, maleZ[index])
       malePoints.push(point)
       femalePoints.push(new THREE.Vector3(x, y, femaleZ[index]))
       sheetBottomPoints.push(point.clone())
@@ -183,8 +205,8 @@ export function buildMeshes(heightmap, settings) {
   const sheetMaterial = new THREE.MeshStandardMaterial({ color: 0xd5a947, roughness: 0.6, metalness: 0.05, side: THREE.DoubleSide })
   let minZ = Infinity
   let maxFemaleZ = -Infinity
-  for (let index = 0; index < z.length; index += 1) {
-    minZ = Math.min(minZ, z[index])
+  for (let index = 0; index < maleZ.length; index += 1) {
+    minZ = Math.min(minZ, maleZ[index])
     maxFemaleZ = Math.max(maxFemaleZ, femalePoints[index].z)
   }
   const male = makeSolidSurface(heightmap, malePoints, minZ - settings.backingThickness, maleMaterial, 'male')

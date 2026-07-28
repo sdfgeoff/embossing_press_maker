@@ -42,6 +42,9 @@ h2 { font-size: 13px; margin: 0; }
 .toggle-row small { font-size: 9px; color: #777d7b; margin-top: 2px; }
 .toggle-row input { accent-color: #c94e35; }
 .field-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px 10px; }
+.surface-reference { display: grid; grid-template-columns: repeat(3, 1fr); gap: 3px; padding: 3px; margin-bottom: 13px; background: #dedfda; }
+.surface-reference button { min-width: 0; border: 0; padding: 7px 4px; background: transparent; color: #666c6a; font-size: 10px; }
+.surface-reference button.active { background: #fff; color: #252a29; box-shadow: 0 1px 2px #9997; }
 .field > span:first-child { display: block; font-size: 10px; color: #666d6b; margin-bottom: 5px; }
 .input-shell { height: 34px; border: 1px solid #c9ccc7; background: white; display: flex; align-items: center; }
 .input-shell:focus-within { border-color: #c94e35; }

@@ -20,6 +20,7 @@ const defaults = {
   tolerance: 0.1,
   vertexLimit: 2000000,
   invert: false,
+  surfaceReference: 'bottom',
 }
 
 export default function App() {
@@ -106,6 +107,23 @@ export default function App() {
           </div>
           <div className="panel-section">
             <div className="section-heading"><span>03</span><h2>Form</h2></div>
+            <div className="surface-reference" role="group" aria-label="Heightmap represents">
+              {[
+                ['bottom', 'Bottom'],
+                ['midpoint', 'Midpoint'],
+                ['top', 'Top'],
+              ].map(([value, label]) => (
+                <button
+                  key={value}
+                  type="button"
+                  className={settings.surfaceReference === value ? 'active' : ''}
+                  aria-pressed={settings.surfaceReference === value}
+                  onClick={() => update('surfaceReference')(value)}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
             <div className="field-grid">
               <NumberField label="Material" value={settings.materialThickness} onChange={update('materialThickness')} min={0.01} />
               <NumberField label="Emboss depth" value={settings.depth} onChange={update('depth')} min={0} />
