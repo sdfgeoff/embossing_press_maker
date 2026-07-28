@@ -35,6 +35,7 @@ export default function App() {
   const [viewMode, setViewMode] = useState('assembled')
   const [visibility, setVisibility] = useState({ male: true, female: true, sheet: true })
   const [cut, setCut] = useState({ enabled: false, position: 0, angle: 0 })
+  const [explode, setExplode] = useState(0)
   const [busy, setBusy] = useState(false)
   const [exportProgress, setExportProgress] = useState({ open: false, stage: '', detail: '', percent: 0 })
   const update = (key) => (value) => setSettings((current) => ({ ...current, [key]: value }))
@@ -228,13 +229,14 @@ export default function App() {
             </div>
           </div>
           <div className="preview">
-            {surfaces ? <Preview surfaces={surfaces} heightmap={heightmap} settings={meshSettings} viewMode={viewMode} visibility={visibility} cut={cut} /> : <div className="empty-state">{surfaceResult.error ? <><TriangleAlert size={34} /><strong>GPU geometry unavailable</strong><span>{surfaceResult.error}</span></> : <><ImagePlus size={34} /><strong>Load a heightmap to begin</strong><span>The paired dies will appear here.</span></>}</div>}
+            {surfaces ? <Preview surfaces={surfaces} heightmap={heightmap} settings={meshSettings} viewMode={viewMode} visibility={visibility} cut={cut} explode={explode} /> : <div className="empty-state">{surfaceResult.error ? <><TriangleAlert size={34} /><strong>GPU geometry unavailable</strong><span>{surfaceResult.error}</span></> : <><ImagePlus size={34} /><strong>Load a heightmap to begin</strong><span>The paired dies will appear here.</span></>}</div>}
             {surfaces && <div className="mesh-stats"><b>{surfaces.stats.vertices.toLocaleString()}</b> surface vertices <span>{surfaces.stats.cols} × {surfaces.stats.rows}</span>{geometryPending && <span>Updating…</span>}</div>}
           </div>
           <div className="inspection-bar">
             <button className={cut.enabled ? 'icon-button active' : 'icon-button'} title="Toggle section plane" onClick={() => setCut((current) => ({ ...current, enabled: !current.enabled }))}><ScanLine size={18} /></button>
             <label><span>Section position</span><input name="section-position" type="range" min={-Math.max(settings.dieWidth, settings.dieHeight) / 2} max={Math.max(settings.dieWidth, settings.dieHeight) / 2} step=".1" value={cut.position} onChange={(event) => setCut((current) => ({ ...current, position: Number(event.target.value) }))} /></label>
             <label><span>Rotation</span><input name="section-rotation" type="range" min="0" max="180" value={cut.angle * 180 / Math.PI} onChange={(event) => setCut((current) => ({ ...current, angle: Number(event.target.value) * Math.PI / 180 }))} /></label>
+            <label><span>Explode {explode.toFixed(1)} mm</span><input name="explode-distance" type="range" min="0" max={Math.max(5, settings.materialThickness * 2)} step=".1" value={explode} disabled={viewMode !== 'assembled'} onChange={(event) => setExplode(Number(event.target.value))} /></label>
             <button className="icon-button" title="Reset camera and section" onClick={() => setCut({ enabled: false, position: 0, angle: 0 })}><RotateCcw size={17} /></button>
           </div>
           <div className="curve-panel">

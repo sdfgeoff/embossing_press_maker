@@ -119,7 +119,7 @@ function applySectionCut(state, cut) {
   }
 }
 
-function applyPreviewLayout(state, viewMode, visibility, dieWidth) {
+function applyPreviewLayout(state, viewMode, visibility, dieWidth, materialThickness, explode) {
   for (const group of [state.maleGroup, state.femaleGroup]) {
     group.position.set(0, 0, 0)
     group.rotation.set(0, 0, 0)
@@ -131,6 +131,10 @@ function applyPreviewLayout(state, viewMode, visibility, dieWidth) {
     state.maleGroup.position.x = -dieWidth * .58
     state.femaleGroup.position.x = dieWidth * .58
     state.femaleGroup.rotation.x = Math.PI
+  } else {
+    const separation = Math.max(0.01, materialThickness * 0.01) + explode
+    state.maleGroup.position.z = -separation
+    state.femaleGroup.position.z = separation
   }
 }
 
@@ -144,7 +148,7 @@ function extrema(values) {
   return { min, max }
 }
 
-export default function Preview({ surfaces, heightmap, settings, viewMode, visibility, cut }) {
+export default function Preview({ surfaces, heightmap, settings, viewMode, visibility, cut, explode }) {
   const mountRef = useRef(null)
   const stateRef = useRef(null)
 
@@ -218,7 +222,7 @@ export default function Preview({ surfaces, heightmap, settings, viewMode, visib
     }
     stateRef.current = state
     applySectionCut(state, cut)
-    applyPreviewLayout(state, viewMode, visibility, dieWidth)
+    applyPreviewLayout(state, viewMode, visibility, dieWidth, settings.materialThickness, explode)
     console.log(`Persistent closed preview setup: ${(performance.now() - setupStart).toFixed(2)} ms`)
     return () => {
       cancelAnimationFrame(frame)
@@ -251,8 +255,8 @@ export default function Preview({ surfaces, heightmap, settings, viewMode, visib
   useEffect(() => {
     const state = stateRef.current
     if (!state) return
-    applyPreviewLayout(state, viewMode, visibility, settings.dieWidth)
-  }, [viewMode, visibility, settings.dieWidth])
+    applyPreviewLayout(state, viewMode, visibility, settings.dieWidth, settings.materialThickness, explode)
+  }, [viewMode, visibility, settings.dieWidth, settings.materialThickness, explode])
 
   useEffect(() => {
     const state = stateRef.current

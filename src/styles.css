@@ -67,8 +67,9 @@ h2 { font-size: 13px; margin: 0; }
 .empty-state span { font-size: 10px; }
 .mesh-stats { position: absolute; left: 14px; bottom: 12px; color: #c8cecc; background: rgba(20,23,24,.78); padding: 7px 9px; font: 10px DM Mono, monospace; pointer-events: none; }
 .mesh-stats span { color: #7f8987; margin-left: 8px; }
-.inspection-bar { display: grid; grid-template-columns: auto 1fr 1fr auto; gap: 16px; align-items: center; padding: 10px 14px; background: #f0f0ec; border-bottom: 1px solid #c5c7c2; }
+.inspection-bar { display: grid; grid-template-columns: auto repeat(3, minmax(0, 1fr)) auto; gap: 16px; align-items: center; padding: 10px 14px; background: #f0f0ec; border-bottom: 1px solid #c5c7c2; }
 .inspection-bar label { display: grid; grid-template-columns: auto 1fr; align-items: center; gap: 9px; font-size: 9px; color: #646a68; }
+.inspection-bar label:has(input:disabled) { opacity: .42; }
 input[type="range"] { width: 100%; accent-color: #c94e35; }
 .icon-button { width: 32px; height: 32px; display: grid; place-items: center; border: 1px solid #c2c5c0; background: #fafaf8; color: #58605e; }
 .icon-button.active { background: #c94e35; color: white; border-color: #c94e35; }
