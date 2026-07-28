@@ -1,0 +1,375 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Relief Press: Formability, DRC, and Tooling Research</title>
+  <style>
+    :root {
+      color-scheme: light;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      color: #202728;
+      background: #eef0ed;
+      font-synthesis: none;
+      --ink: #202728;
+      --muted: #66706e;
+      --line: #cbd0cc;
+      --paper: #fbfbf8;
+      --red: #b94732;
+      --amber: #a86712;
+      --green: #247054;
+      --blue: #276b87;
+      --dark: #1f292c;
+    }
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body { margin: 0; line-height: 1.55; }
+    a { color: #176685; text-underline-offset: 2px; }
+    a:hover { color: #a43f2c; }
+    .report-header {
+      padding: 34px max(24px, calc((100vw - 1260px) / 2));
+      color: #f4f5f1;
+      background: var(--dark);
+      border-bottom: 5px solid var(--red);
+    }
+    .kicker { margin: 0 0 9px; color: #ef9b86; font: 700 12px ui-monospace, SFMono-Regular, Menlo, monospace; text-transform: uppercase; }
+    h1 { max-width: 950px; margin: 0; font-size: clamp(29px, 4vw, 52px); line-height: 1.05; letter-spacing: 0; }
+    .subtitle { max-width: 850px; margin: 16px 0 0; color: #c9d0ce; font-size: 16px; }
+    .meta { display: flex; flex-wrap: wrap; gap: 18px; margin-top: 25px; color: #aeb9b6; font: 12px ui-monospace, SFMono-Regular, Menlo, monospace; }
+    .layout { display: grid; grid-template-columns: 235px minmax(0, 1fr); max-width: 1260px; margin: 0 auto; }
+    nav { position: sticky; top: 0; align-self: start; max-height: 100vh; padding: 28px 20px; overflow: auto; }
+    nav strong { display: block; margin-bottom: 10px; font-size: 11px; text-transform: uppercase; }
+    nav a { display: block; padding: 7px 0; color: #4f5957; border-bottom: 1px solid #d8dcd8; font-size: 12px; text-decoration: none; }
+    nav a:hover { color: var(--red); }
+    main { min-width: 0; padding: 36px 42px 70px; background: var(--paper); border-left: 1px solid var(--line); }
+    section { padding: 8px 0 38px; border-bottom: 1px solid var(--line); }
+    section:last-child { border-bottom: 0; }
+    h2 { margin: 25px 0 11px; font-size: 27px; line-height: 1.2; }
+    h3 { margin: 25px 0 8px; font-size: 17px; }
+    p { max-width: 880px; margin: 8px 0 13px; }
+    .lede { font-size: 19px; line-height: 1.45; color: #394240; }
+    .callout { max-width: 900px; margin: 20px 0; padding: 16px 18px; border-left: 4px solid var(--red); background: #f1f1ec; }
+    .callout strong { display: block; margin-bottom: 4px; }
+    .confidence {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      margin: 22px 0 28px;
+      border: 1px solid var(--line);
+      background: white;
+    }
+    .confidence div { min-height: 120px; padding: 15px; border-right: 1px solid var(--line); }
+    .confidence div:last-child { border-right: 0; }
+    .confidence b { display: block; margin-bottom: 7px; font-size: 12px; text-transform: uppercase; }
+    .confidence span { color: var(--muted); font-size: 12px; }
+    .deterministic b { color: var(--green); }
+    .screening b { color: var(--amber); }
+    .empirical b { color: var(--blue); }
+    .simulation b { color: var(--red); }
+    table { width: 100%; margin: 18px 0 24px; border-collapse: collapse; font-size: 13px; }
+    th { padding: 10px 9px; color: #f5f6f3; background: #303a3c; text-align: left; vertical-align: bottom; }
+    td { padding: 11px 9px; border-bottom: 1px solid #d8dcd8; vertical-align: top; }
+    tbody tr:nth-child(even) { background: #f1f2ee; }
+    .priority { width: 46px; font: 700 12px ui-monospace, SFMono-Regular, Menlo, monospace; }
+    .tag {
+      display: inline-block;
+      padding: 2px 6px;
+      color: #fff;
+      border-radius: 3px;
+      font: 700 9px ui-monospace, SFMono-Regular, Menlo, monospace;
+      text-transform: uppercase;
+      white-space: nowrap;
+    }
+    .tag.hard { background: var(--green); }
+    .tag.warn { background: var(--amber); }
+    .tag.data { background: var(--blue); }
+    .tag.fea { background: var(--red); }
+    .pipeline {
+      display: grid;
+      grid-template-columns: repeat(5, minmax(0, 1fr));
+      gap: 1px;
+      margin: 22px 0;
+      border: 1px solid #9ba3a1;
+      background: #9ba3a1;
+    }
+    .pipeline div { position: relative; min-height: 118px; padding: 14px 13px; background: white; }
+    .pipeline b { display: block; color: var(--red); font: 700 11px ui-monospace, SFMono-Regular, Menlo, monospace; }
+    .pipeline span { display: block; margin-top: 8px; color: var(--muted); font-size: 11px; }
+    .metric-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; margin: 19px 0; }
+    .metric { padding: 16px; border: 1px solid var(--line); border-top: 4px solid var(--blue); background: white; }
+    .metric h3 { margin: 0 0 7px; font-size: 15px; }
+    .metric p { margin: 0; color: var(--muted); font-size: 12px; }
+    .metric code { display: inline-block; margin-top: 8px; color: #364242; font-size: 11px; }
+    .risk-scale { display: grid; grid-template-columns: 1.2fr 1fr 1fr 1.2fr; height: 34px; margin: 18px 0 7px; color: white; font: 700 10px ui-monospace, SFMono-Regular, Menlo, monospace; text-transform: uppercase; }
+    .risk-scale span { display: grid; place-items: center; }
+    .risk-scale span:nth-child(1) { background: #267454; }
+    .risk-scale span:nth-child(2) { background: #66796a; }
+    .risk-scale span:nth-child(3) { background: #b27821; }
+    .risk-scale span:nth-child(4) { background: #b74632; }
+    .small { color: var(--muted); font-size: 11px; }
+    ul, ol { max-width: 900px; padding-left: 22px; }
+    li { margin: 6px 0; }
+    code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+    .source-list { padding: 0; list-style: none; counter-reset: source; }
+    .source-list li { position: relative; margin: 0; padding: 11px 12px 11px 42px; border-bottom: 1px solid var(--line); }
+    .source-list li::before { counter-increment: source; content: counter(source, decimal-leading-zero); position: absolute; left: 7px; color: var(--red); font: 700 11px ui-monospace, SFMono-Regular, Menlo, monospace; }
+    .source-list span { display: block; color: var(--muted); font-size: 11px; }
+    footer { padding: 22px; color: #66706e; background: #e4e7e3; text-align: center; font-size: 11px; }
+    @media (max-width: 900px) {
+      .layout { display: block; }
+      nav { position: static; max-height: none; padding: 16px 22px; border-bottom: 1px solid var(--line); }
+      nav strong { margin: 0; }
+      nav a { display: inline-block; margin-right: 14px; border: 0; }
+      main { padding: 25px 22px 55px; border-left: 0; }
+      .confidence, .pipeline { grid-template-columns: 1fr 1fr; }
+      .confidence div { border-bottom: 1px solid var(--line); }
+      .pipeline div:last-child { grid-column: 1 / -1; }
+    }
+    @media (max-width: 560px) {
+      .confidence, .pipeline, .metric-grid { grid-template-columns: 1fr; }
+      .confidence div { border-right: 0; }
+      table { display: block; overflow-x: auto; }
+      .risk-scale { grid-template-columns: 1fr; height: auto; }
+      .risk-scale span { min-height: 28px; }
+    }
+    @media print {
+      nav { display: none; }
+      .layout { display: block; }
+      main { padding: 20px; border: 0; }
+      section { break-inside: avoid; }
+      a { color: inherit; text-decoration: none; }
+    }
+  </style>
+</head>
+<body>
+  <header class="report-header">
+    <p class="kicker">Relief Press / Engineering Research</p>
+    <h1>From ideal heightmap to credible forming tool</h1>
+    <p class="subtitle">Design-rule checks, material behaviour, springback compensation, calibration, alignment, and a practical product roadmap for browser-generated paired dies.</p>
+    <div class="meta"><span>29 July 2026</span><span>Research synthesis</span><span>Scope: paper + thin sheet metal + printed tooling</span></div>
+  </header>
+
+  <div class="layout">
+    <nav aria-label="Report contents">
+      <strong>Contents</strong>
+      <a href="#decision">Core decision</a>
+      <a href="#drc">DRC framework</a>
+      <a href="#conditioning">Heightmap conditioning</a>
+      <a href="#materials">Material profiles</a>
+      <a href="#springback">Springback</a>
+      <a href="#tooling">Alignment and tooling</a>
+      <a href="#force">Force and tool risk</a>
+      <a href="#roadmap">Roadmap</a>
+      <a href="#sources">Sources</a>
+    </nav>
+
+    <main>
+      <section id="decision">
+        <h2>Core decision</h2>
+        <p class="lede">Do not turn a generic material dropdown into an implied forming simulation. Build a layered system that tells users what is known, what is a useful warning, what was calibrated, and what requires nonlinear FEA.</p>
+        <div class="callout">
+          <strong>Why this matters</strong>
+          NIST describes springback as the elastic change after unloading and attributes its poor predictability to residual stress and multiaxial, non-linear strain paths. Alloy, temper, thickness, grain direction, friction, edge restraint, load history, and tool compliance all matter. A single “steel compensation” percentage would be misleading.
+        </div>
+        <div class="confidence" aria-label="Confidence levels">
+          <div class="deterministic"><b>Deterministic</b><span>Mesh validity, sampled clearance, collisions, feature resolution, and export checks.</span></div>
+          <div class="screening"><b>Screening</b><span>Radius, slope, bend strain, Gaussian curvature, thinning, trapped-pocket, and press-risk warnings.</span></div>
+          <div class="empirical"><b>Empirical</b><span>Coupon measurements and saved machine/material/tool profiles fitted to actual results.</span></div>
+          <div class="simulation"><b>Simulation-grade</b><span>Nonlinear contact forming, unloading, FLD evaluation, and iterative die compensation.</span></div>
+        </div>
+
+        <h3>Recommended product shape</h3>
+        <div class="pipeline" aria-label="Recommended workflow">
+          <div><b>01 / TARGET</b><span>Import and condition the ideal heightmap without changing zero or peak-to-peak depth.</span></div>
+          <div><b>02 / SCREEN</b><span>Run geometry DRC and material-specific advisory maps before generating printable solids.</span></div>
+          <div><b>03 / CALIBRATE</b><span>Print a coupon, form the real material, measure it, and save a process profile.</span></div>
+          <div><b>04 / COMPENSATE</b><span>Apply bounded empirical correction or round-trip through an external forming solver.</span></div>
+          <div><b>05 / EXPORT</b><span>Validate solids, add alignment/mounting, and export STL plus a setup manifest.</span></div>
+        </div>
+      </section>
+
+      <section id="drc">
+        <h2>A useful DRC framework</h2>
+        <p>Separate hard failures from process-dependent advice. Every result should identify its confidence level and display the affected region as a selectable heatmap in the existing 3D preview.</p>
+        <table>
+          <thead>
+            <tr><th>Priority</th><th>Check</th><th>Classification</th><th>What it answers</th><th>Implementation</th></tr>
+          </thead>
+          <tbody>
+            <tr><td class="priority">P0</td><td>Export mesh validity</td><td><span class="tag hard">Hard check</span></td><td>Is each die closed, consistently wound, non-degenerate, and free of self-intersections?</td><td>Run after real export-mesh construction. Check edge incidence, signed volume, components, degenerates, and triangle intersections.</td></tr>
+            <tr><td class="priority">P0</td><td>Gap and collision residual</td><td><span class="tag hard">Hard check</span></td><td>Does the discretized die pair preserve requested material separation everywhere?</td><td>Closest-point/BVH distance map; report minimum and percentiles. Test die/die and die/sheet intersections.</td></tr>
+            <tr><td class="priority">P0</td><td>Backing and printable limits</td><td><span class="tag hard">Hard check</span></td><td>Are walls breached or features below declared manufacturing accuracy?</td><td>Compare local remaining thickness, XY pitch, triangle spacing, and relief detail against the tool-manufacturing profile.</td></tr>
+            <tr><td class="priority">P1</td><td>Offset singularity</td><td><span class="tag hard">Math boundary</span></td><td>Where can a regular normal offset fold or lose branches?</td><td>Estimate principal curvature and flag <code>|d kᵢ| ≥ 1</code>, with an amber safety margin before the boundary.</td></tr>
+            <tr><td class="priority">P1</td><td>Slope / withdrawal</td><td><span class="tag warn">Advisory</span></td><td>Are near-vertical regions difficult to release, print, or inspect?</td><td>Map <code>n · pressAxis</code>. True undercuts are errors; a maximum slope/draft threshold is user- and process-defined.</td></tr>
+            <tr><td class="priority">P1</td><td>Minimum radius</td><td><span class="tag warn">Advisory</span></td><td>Are bends sharper than the material, printer, or offset can support?</td><td>Map <code>Rmin = 1 / max(|k₁|, |k₂|)</code> against exact alloy/temper/orientation and manufacturing thresholds.</td></tr>
+            <tr><td class="priority">P1</td><td>Lost-detail map</td><td><span class="tag warn">Advisory</span></td><td>Which features will disappear at declared manufacturing tolerance?</td><td>Compare target with a physically band-limited or morphological reconstruction; show amplitude and RMS loss.</td></tr>
+            <tr><td class="priority">P2</td><td>Bending strain</td><td><span class="tag warn">Screening</span></td><td>Where is outer-fibre strain intrinsically high?</td><td>Use <code>εbend ≈ t / (2Rmid)</code>. Compare with an editable material limit; do not call this a fracture prediction.</td></tr>
+            <tr><td class="priority">P2</td><td>Stretch complexity</td><td><span class="tag warn">Screening</span></td><td>Where must a flat sheet stretch, compress, wrinkle, or draw in?</td><td>Map Gaussian curvature and heightfield metric change. Non-zero Gaussian curvature is a strong complexity signal, not a local strain solution.</td></tr>
+            <tr><td class="priority">P2</td><td>Thinning estimate</td><td><span class="tag warn">Screening</span></td><td>What thickness loss follows from an assumed membrane strain field?</td><td>With principal logarithmic strains, estimate <code>tfinal = t₀ exp(−ε₁−ε₂)</code>. Label assumptions prominently.</td></tr>
+            <tr><td class="priority">P2</td><td>Trapped pockets</td><td><span class="tag data">Measured topology</span></td><td>Does closure isolate air, lubricant, or compressible material?</td><td>Flood-fill the remaining gap from the perimeter at incremental closure positions; report isolated volume and closure travel.</td></tr>
+            <tr><td class="priority">P3</td><td>Forming-limit evaluation</td><td><span class="tag fea">FEA</span></td><td>Will this exact material/process neck, crack, wrinkle, or thin excessively?</td><td>Nonlinear shell/contact solve plus an alloy-specific forming-limit curve and unloading step.</td></tr>
+          </tbody>
+        </table>
+
+        <h3>DRC presentation</h3>
+        <div class="risk-scale" aria-label="Suggested risk scale"><span>Pass</span><span>Information</span><span>Warning</span><span>Error</span></div>
+        <p class="small">Errors should prevent export or require explicit override. Warnings are process-specific and should never silently alter the artwork. Information layers describe complexity without claiming failure.</p>
+
+        <div class="metric-grid">
+          <div class="metric"><h3>GPU-friendly maps</h3><p>Slope, local metric, Hessian/curvature, radius, bending strain, feature loss, and offset singularity fit the current texture-based architecture.</p><code>height texture → derivative fields → heatmap texture</code></div>
+          <div class="metric"><h3>Mesh-stage checks</h3><p>Manifold validity, signed volume, closest-point gap, collisions, Hausdorff error, and triangle quality must run on the actual export geometry.</p><code>export mesh → BVH / robust mesh kernel → report</code></div>
+          <div class="metric"><h3>Suggested browser libraries</h3><p><code>three-mesh-bvh</code> is a practical choice for proximity and intersection queries. <code>manifold-3d</code> WASM can support robust manifold Boolean workflows.</p></div>
+          <div class="metric"><h3>Reference validator</h3><p>CGAL is the stronger desktop/CI reference for self-intersection, repair, Hausdorff distance, and signed-distance isosurfacing, but is heavy for the browser.</p></div>
+        </div>
+      </section>
+
+      <section id="conditioning">
+        <h2>Turn DRC into useful correction tools</h2>
+        <p>A warning-only system will frustrate users. Add a non-destructive “condition heightmap” stack that previews deviation from the original and preserves the existing zero-height and peak-to-peak contract.</p>
+        <ol>
+          <li><strong>Physical low-pass filter:</strong> remove spatial frequencies below printer/process tolerance, expressed in millimetres rather than pixels.</li>
+          <li><strong>Minimum-radius filter:</strong> penalize excessive Hessian/principal curvature while retaining broad relief.</li>
+          <li><strong>Slope limiter:</strong> project height gradients to a configurable limit and solve a smooth reconstruction.</li>
+          <li><strong>Island/groove cleanup:</strong> morphological opening/closing at the declared tool radius to remove features that cannot survive manufacturing.</li>
+          <li><strong>Deviation report:</strong> show maximum, RMS, and percentile height errors plus a difference heatmap before applying the result.</li>
+        </ol>
+        <p>A GPU ping-pong optimization can minimize target deviation plus smoothness while projecting slope/curvature constraints. This is a controlled geometric approximation, not forming simulation.</p>
+        <div class="callout">
+          <strong>Keep the current spherical-envelope method</strong>
+          The research supports the Minkowski/spherical-envelope approach over vertex-normal displacement. Add a DRC warning that a true Euclidean offset may cease to be a heightfield when curvature is high or topology changes.
+        </div>
+      </section>
+
+      <section id="materials">
+        <h2>Material profiles, not magical presets</h2>
+        <p>Offer convenient starting profiles, but require users to select or enter the exact grade, condition, thickness, and direction before enabling predictive warnings. Broad categories should carry a “screening only” badge.</p>
+        <table>
+          <thead><tr><th>Starter family</th><th>Required distinctions</th><th>Useful fields</th><th>What the preset may safely drive</th></tr></thead>
+          <tbody>
+            <tr><td>Paper / card</td><td>Basis weight, caliper, coating/fibre composition, machine direction, conditioned RH</td><td>MD/CD direction, thickness, moisture/RH, empirical pressure window, measured recovery</td><td>Coupon choice, feature-resolution warning, setup notes, empirical compensation</td></tr>
+            <tr><td>Sheet brass</td><td>Alloy and temper, e.g. CuZn37/C27200 soft through hard; rolling direction</td><td>E, yield curve, elongation, r/t table, grain angle, friction, FLC when available</td><td>Radius and bending-strain screening; calibrated recovery profile</td></tr>
+            <tr><td>Sheet aluminium</td><td>Exact alloy and temper; thickness; bend direction relative to grain</td><td>E, yield/hardening, anisotropy, elongation, grain-dependent minimum radius, FLC</td><td>Radius/orientation warnings and FEA export; never a universal aluminium springback factor</td></tr>
+            <tr><td>Low-carbon steel</td><td>Exact grade, condition/coating, thickness, rolling direction</td><td>Elastic-plastic curve, hardening model, r-values, FLC, friction, press process</td><td>Screening and solver input; calibration tied to the actual press and die process</td></tr>
+          </tbody>
+        </table>
+
+        <h3>Profile schema</h3>
+        <p><code>category · grade/alloy · temper · thickness · E · ν · density · yield curve · UTS/elongation · hardening law · r-values 0/45/90 · FLC points · min r/t by grain angle · friction · thinning threshold · process pressure range · source/revision · confidence</code></p>
+        <p>Paper profiles need a different schema: basis weight, caliper, MD/CD axes, RH/moisture conditioning, compression response, and an empirical pressure window. Paper is orthotropic, compressible, inelastic, and moisture-sensitive; it should not reuse metal plasticity fields.</p>
+        <div class="callout">
+          <strong>Useful preset UX</strong>
+          Ship “uncoated paper”, “cotton paper”, “paperboard”, “soft cartridge brass”, “forming aluminium”, and “low-carbon steel” as editable templates. Require confirmation of thickness and condition, show sources and revision dates, and let users duplicate profiles into a local calibration library.
+        </div>
+      </section>
+
+      <section id="springback">
+        <h2>Springback: three credible levels</h2>
+        <h3>1. Local screening estimate</h3>
+        <p>Show the qualitative risk of elastic recovery using local radius, thickness, elastic modulus, and yield strength. Springback generally increases with higher yield strength and larger radius-to-thickness ratio, and decreases with thickness. Use this to rank regions, not to generate an “accurate” compensated die.</p>
+
+        <h3>2. Empirical calibration</h3>
+        <p>This is the best near-term product feature. Generate a compact coupon containing the same range of radii, slopes, feature sizes, and depths as the user’s artwork. The user forms it with the actual material, press, lubricant, hold time, and printed-tool process, then enters measured heights/radii or imports a scan.</p>
+        <ul>
+          <li>Fit a bounded depth/radius correction curve and report residual error.</li>
+          <li>Key the profile by exact material, thickness, grain direction, tool print process, press, lubrication, closure, and hold settings.</li>
+          <li>Allow multiple calibration runs and display confidence intervals rather than hiding variance.</li>
+          <li>Apply correction non-destructively and rerun DRC after every iteration.</li>
+        </ul>
+
+        <h3>3. External forming simulation</h3>
+        <p>For serious metal work, export the blank, rigid die surfaces, press stroke, contact/friction, material axes, and material law to a nonlinear forming solver. The credible workflow is forming/contact followed by unloaded equilibrium, then iterative tool morphing:</p>
+        <p><code>tool(next) = tool(current) + gain × regularize(target − simulated_unloaded_shape)</code></p>
+        <p>Repeat forming and unloading until the deviation is within tolerance. Commercial forming tools such as LS-DYNA, Ansys Forming, Abaqus, PAM-STAMP, and DYNAFORM are built for this class of problem. Relief Press should initially export neutral geometry plus a versioned JSON manifest, then import the simulated final sheet or deviation field.</p>
+        <div class="callout">
+          <strong>Bottoming and coining</strong>
+          These processes may reduce springback but substantially increase pressure, marking, thinning, and printed-tool risk. Model them as explicit process choices with warnings, never as an automatic compensation toggle.
+        </div>
+      </section>
+
+      <section id="tooling">
+        <h2>Alignment, registration, and die-set features</h2>
+        <p>The most immediately useful tooling addition is not a springback model. It is repeatable registration. Official locating guidance supports a two-locator scheme: one round pin constrains two axes and one diamond/slotted receiver constrains the remaining axis without over-constraining hole spacing.</p>
+        <table>
+          <thead><tr><th>Feature</th><th>Recommendation</th><th>DRC</th></tr></thead>
+          <tbody>
+            <tr><td>Die alignment</td><td>Two widely separated locators: one round, one diamond/slotted. Prefer generated holes/pockets for replaceable metal pins and bushings over printed precision pins.</td><td>Relief collision, edge/wall margin, engagement depth, bottoming before closure, press daylight, and 180° misassembly.</td></tr>
+            <tr><td>Lead-in</td><td>Conical/chamfered tips and staggered engagement height; asymmetric layout or keying.</td><td>Pin contact before intended guidance and excessive side load.</td></tr>
+            <tr><td>Blank registration</td><td>Separate L-corner fence, two edge stops, center marks, and blank-outline overlay outside the forming envelope.</td><td>Prevent stops from restraining required sheet draw-in.</td></tr>
+            <tr><td>Mounting</td><td>Bolt-hole grid/counterbores, adapter-plate mode, flat-backing check, press-axis arrow, TOP/BOTTOM labels, and revision hash.</td><td>Hole-to-edge margin, backing weakness, collision with pins/relief.</td></tr>
+            <tr><td>Controlled closure</td><td>Optional stop towers/pockets and shim worksheet as setup aids.</td><td>Compare stop height with calculated closure and flag intended overtravel/collision. Do not call these safety blocks.</td></tr>
+            <tr><td>Venting</td><td>Advanced option: detect closed basins and suggest a small path to an edge.</td><td>Show possible witness marks; require explicit user placement/approval.</td></tr>
+            <tr><td>Setup manifest</td><td>Export JSON/PDF-style setup data with closed height, envelope, material, grain angle, pins, blank, stroke, and revision.</td><td>Warn when the manifest no longer matches regenerated STLs.</td></tr>
+          </tbody>
+        </table>
+        <p>Precision stripper guides use micrometre-scale clearances, far beyond typical printed pin accuracy. Hardware presets should therefore generate standard holes and receiver geometry, with printable alignment labelled as prototype-grade.</p>
+      </section>
+
+      <section id="force">
+        <h2>Press force and printed-tool risk</h2>
+        <p>Do not issue a confident tonnage number from heightmap area alone. Contact develops progressively; metal flow stress, friction, edge restraint, geometry, coining, and printed-tool compliance dominate. A simple <code>F = nominal pressure × projected area</code> value can be shown only as an editable empirical estimate with a safety factor.</p>
+        <h3>Near-term checks</h3>
+        <ul>
+          <li>Ask for press rated capacity, daylight, bed size, and maximum stroke.</li>
+          <li>Ask for tool process: FDM, SLA/resin, metal print, machined polymer, or machined metal.</li>
+          <li>Check backing thickness, unsupported spans, sharp re-entrant corners, print orientation, and local remaining wall.</li>
+          <li>Show a risk index from formed area, maximum slope, minimum radius, depth/thickness, and material ductility class rather than fake precision.</li>
+          <li>Let users record measured press force during coupon trials and fit an empirical estimate for that setup.</li>
+        </ul>
+        <p>Published rapid-tooling work demonstrates that printed polymer tools can form aluminium in short-run experiments, but strength, proportional limit, wear, print orientation, and process variability constrain their use. Printed tools should be described as prototype/short-run tooling unless the user supplies validated tool data.</p>
+        <div class="callout">
+          <strong>Safety boundary</strong>
+          The software cannot certify a press setup. Export should include a checklist covering rated tooling/press capacity, secure mounting, guards or safeguarding devices, thin/soft trial blanks, compatible lubrication, incremental strokes, crack inspection, and lockout/safety blocks for setup. OSHA requires point-of-operation safeguarding for mechanical power presses.
+        </div>
+      </section>
+
+      <section id="roadmap">
+        <h2>Recommended implementation roadmap</h2>
+        <table>
+          <thead><tr><th>Phase</th><th>Deliverable</th><th>Why it earns its place</th><th>Complexity</th></tr></thead>
+          <tbody>
+            <tr><td class="priority">1</td><td>DRC framework + export validity + gap residual</td><td>Finds actual broken solids and clearance failures before printing.</td><td>Medium</td></tr>
+            <tr><td class="priority">2</td><td>Slope, radius, offset-singularity, lost-detail, Gaussian-curvature heatmaps</td><td>Turns unknown heightmaps into explainable manufacturing risk.</td><td>Medium</td></tr>
+            <tr><td class="priority">3</td><td>Material and tool-manufacturing profiles</td><td>Separates workpiece behaviour from printer/tool capability; supplies advisory thresholds.</td><td>Medium</td></tr>
+            <tr><td class="priority">4</td><td>Round + diamond alignment, blank stops, labels, mounting, setup manifest</td><td>Improves repeatability immediately without pretending to solve material physics.</td><td>Medium</td></tr>
+            <tr><td class="priority">5</td><td>Non-destructive heightmap conditioner</td><td>Lets users act on DRC findings while measuring deviation from the original.</td><td>High</td></tr>
+            <tr><td class="priority">6</td><td>Calibration coupon + measured profile library</td><td>Provides defensible compensation tied to the real material, press, and printed die.</td><td>High</td></tr>
+            <tr><td class="priority">7</td><td>Trapped-pocket analysis, vents, stops, and empirical force logs</td><td>Addresses deeper workflow issues after the core validation path is reliable.</td><td>Medium</td></tr>
+            <tr><td class="priority">8</td><td>FEA export/import + iterative compensation</td><td>Only credible route to predictive springback/FLD for complex metal embossing.</td><td>Very high</td></tr>
+          </tbody>
+        </table>
+
+        <h3>Suggested next engineering milestone</h3>
+        <p>Implement Phase 1 and the heatmap shell of Phase 2 together. Add a DRC drawer listing issues, a heatmap selector in the preview, per-check confidence labels, and an export gate for hard errors. This creates the architecture that every later material, calibration, and tooling feature can reuse.</p>
+      </section>
+
+      <section id="sources">
+        <h2>Selected primary and authoritative sources</h2>
+        <ol class="source-list">
+          <li><a href="https://www.nist.gov/programs-projects/springback">NIST — Springback research program</a><span>Why multiaxial stress history and residual stress make compensation difficult.</span></li>
+          <li><a href="https://www.nist.gov/publications/designing-uniaxial-tensioncompression-test-springback-analysis-high-strength-steel">NIST — Tension/compression testing for springback analysis</a><span>Material data requirements and directionally dependent yield behaviour.</span></li>
+          <li><a href="https://www.nist.gov/system/files/documents/lightweighting/robustness.pdf">NIST — Robustness of the sheet metal springback cup test</a><span>Experimental sensitivity, residual stress, and alignment effects.</span></li>
+          <li><a href="https://www.iso.org/standard/78137.html">ISO 12004-1 — Forming-limit curves for sheet and strip</a><span>Standard basis for applying forming-limit curves to sheet metal.</span></li>
+          <li><a href="https://www.aluminum.org/sites/default/files/2021-09/DesigningAluminumStructuresFAQs20201012_0.pdf">The Aluminum Association — Designing aluminum structures FAQ</a><span>Minimum bend radius depends on alloy, temper, thickness, angle, and orientation.</span></li>
+          <li><a href="https://www.aurubis.com/en/dam/jcr%3Ac81305d1-7d1b-4f12-9eaf-376cff4ada3c/PNA%20243_CuZn37_C27200-E.N.pdf">Aurubis — CuZn37 / C27200 technical data</a><span>Temper-dependent strength, elongation, and bend-radius data for brass.</span></li>
+          <li><a href="https://bioresources.cnr.ncsu.edu/resources/finite-element-modeling-of-the-embossing-of-paper-sheets/">NC State BioResources — Finite element modelling of paper embossing</a><span>Paper orthotropy, inelasticity, humidity dependence, and residual deformation.</span></li>
+          <li><a href="https://pmc.ncbi.nlm.nih.gov/articles/PMC9228970/">Embossing pressure effects on tissue paper</a><span>Setup-specific pressure tradeoffs and the danger of universal paper values.</span></li>
+          <li><a href="https://doc.cgal.org/latest/Polygon_mesh_processing/">CGAL Polygon Mesh Processing</a><span>Reference algorithms for intersection, validity, repair, and mesh measurement.</span></li>
+          <li><a href="https://doc.cgal.org/latest/Isosurfacing_3/index.html">CGAL Isosurfacing</a><span>Signed-distance level-set extraction for general offsets with topology change.</span></li>
+          <li><a href="https://github.com/gkjohnson/three-mesh-bvh">three-mesh-bvh</a><span>Browser-compatible BVH acceleration for proximity and intersection work.</span></li>
+          <li><a href="https://github.com/elalish/manifold">Manifold</a><span>WASM-accessible manifold mesh operations and caveats around STL topology.</span></li>
+          <li><a href="https://ansyshelp.ansys.com/public/Views/Secured/corp/v252/en/forming_ug/forming_ug_post.html">Ansys Forming — FLD and thinning results</a><span>Simulation-grade crack, wrinkle, stretching, and thinning evaluation.</span></li>
+          <li><a href="https://ansyshelp.ansys.com/public/Views/Secured/corp/v251/en/forming_ug/forming_ug_advanced-sbc.html">Ansys Forming — Iterative springback compensation</a><span>Target geometry, tolerances, scaling, and repeated compensation solves.</span></li>
+          <li><a href="https://us.misumi-ec.com/maker/misumi/mech/tech/locating_pins_tutorial/">MISUMI — Locating pin design</a><span>Two-pin location, round/diamond strategy, lead geometry, and replaceability.</span></li>
+          <li><a href="https://www.carrlane.com/product/locating-pins/locating-pins/diamond-nose-pins">Carr Lane — Diamond locating pins</a><span>Removing redundant constraint while retaining one-axis location.</span></li>
+          <li><a href="https://www.mate.com/wp-content/uploads/2021/03/LIT00682_TechSolutionsGuide_RevE_LR.pdf">Mate Precision Technologies — Forming design guidance</a><span>Material flow, thinning, radius, height/thickness, spacing, and transition risks.</span></li>
+          <li><a href="https://formlabs.com/global/white-papers/how-to-do-rapid-tooling-for-sheet-metal-forming-with-3d-printed/">Formlabs — Rapid tooling for sheet metal forming</a><span>Printed-tool force, wear, lubrication, process, and trial-material guidance.</span></li>
+          <li><a href="https://www.osha.gov/laws-regs/regulations/standardnumber/1910/1910.217">OSHA 1910.217 — Mechanical power presses</a><span>Point-of-operation safeguarding and press safety requirements.</span></li>
+          <li><a href="https://doi.org/10.3390/met11081256">Tondini et al. — Performance of 3D printed polymer tools in sheet metal forming</a><span>Experimental printed-tool accuracy and forming performance.</span></li>
+        </ol>
+        <p class="small">This report is product research, not a tooling certification or substitute for a qualified forming engineer, press manufacturer guidance, material supplier data, or applicable safety requirements.</p>
+      </section>
+    </main>
+  </div>
+
+  <footer>Relief Press forming research · standalone HTML report · sources accessed July 2026</footer>
+</body>
+</html>
