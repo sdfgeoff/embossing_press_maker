@@ -124,8 +124,8 @@ function applyPreviewLayout(state, viewMode, visibility, dieWidth, materialThick
     group.position.set(0, 0, 0)
     group.rotation.set(0, 0, 0)
   }
-  state.maleGroup.visible = visibility.male
-  state.femaleGroup.visible = visibility.female
+  state.maleGroup.visible = visibility.bottom
+  state.femaleGroup.visible = visibility.top
   state.sheetGroup.visible = visibility.sheet
   if (viewMode === 'side') {
     state.maleGroup.position.x = -dieWidth * 1.08
