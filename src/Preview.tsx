@@ -126,16 +126,28 @@ function applyPreviewLayout(state, viewMode, visibility, dieWidth, materialThick
   }
   state.maleGroup.visible = visibility.male
   state.femaleGroup.visible = visibility.female
-  state.sheetGroup.visible = visibility.sheet && viewMode === 'assembled'
+  state.sheetGroup.visible = visibility.sheet
   if (viewMode === 'side') {
-    state.maleGroup.position.x = -dieWidth * .58
-    state.femaleGroup.position.x = dieWidth * .58
+    state.maleGroup.position.x = -dieWidth * 1.08
+    state.femaleGroup.position.x = dieWidth * 1.08
     state.femaleGroup.rotation.x = Math.PI
   } else {
     const separation = Math.max(0.01, materialThickness * 0.01) + explode
     state.maleGroup.position.z = -separation
     state.femaleGroup.position.z = separation
   }
+}
+
+function framePreview(state, viewMode, dieWidth, dieHeight) {
+  const canvas = state.renderer.domElement
+  const aspect = canvas.clientWidth / Math.max(1, canvas.clientHeight)
+  const contentWidth = viewMode === 'side' ? dieWidth * 3.2 : dieWidth
+  const fitHeight = Math.max(dieHeight, contentWidth / Math.max(0.5, aspect))
+  const distance = fitHeight * 0.65 / Math.tan(THREE.MathUtils.degToRad(state.camera.fov / 2))
+  const direction = new THREE.Vector3(0.45, -0.7, 0.75).normalize()
+  state.camera.position.copy(direction.multiplyScalar(distance))
+  state.controls.target.set(0, 0, 0)
+  state.controls.update()
 }
 
 function extrema(values) {
@@ -219,13 +231,14 @@ export default function Preview({ surfaces, heightmap, settings, viewMode, visib
     }
     render()
     const state = {
-      renderer, controls, maleTexture, femaleTexture, maleMesh, femaleMesh, sheetMesh,
+      renderer, camera, controls, maleTexture, femaleTexture, maleMesh, femaleMesh, sheetMesh,
       maleGroup, femaleGroup, sheetGroup, clippingPlane,
       clippingMaterials: [maleMesh.material, femaleMesh.material, sheetMesh.material],
     }
     stateRef.current = state
     applySectionCut(state, cut)
     applyPreviewLayout(state, viewMode, visibility, dieWidth, settings.materialThickness, explode)
+    framePreview(state, viewMode, dieWidth, dieHeight)
     console.log(`Persistent closed preview setup: ${(performance.now() - setupStart).toFixed(2)} ms`)
     return () => {
       cancelAnimationFrame(frame)
@@ -260,6 +273,12 @@ export default function Preview({ surfaces, heightmap, settings, viewMode, visib
     if (!state) return
     applyPreviewLayout(state, viewMode, visibility, settings.dieWidth, settings.materialThickness, explode)
   }, [viewMode, visibility, settings.dieWidth, settings.materialThickness, explode])
+
+  useEffect(() => {
+    const state = stateRef.current
+    if (!state) return
+    framePreview(state, viewMode, settings.dieWidth, settings.dieHeight)
+  }, [viewMode, settings.dieWidth, settings.dieHeight])
 
   useEffect(() => {
     const state = stateRef.current
