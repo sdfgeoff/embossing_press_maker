@@ -1,4 +1,5 @@
 import * as THREE from 'three'
+import { computeSphericalEnvelope } from './gpuEnvelope'
 
 const clamp = (value, min, max) => Math.max(min, Math.min(max, value))
 
@@ -80,22 +81,6 @@ function displacements(heightmap, settings) {
   return result
 }
 
-function surfaceNormals(z, cols, rows, pitchX, pitchY) {
-  const normals = new Array(z.length)
-  for (let row = 0; row < rows; row += 1) {
-    for (let col = 0; col < cols; col += 1) {
-      const left = z[row * cols + Math.max(0, col - 1)]
-      const right = z[row * cols + Math.min(cols - 1, col + 1)]
-      const down = z[Math.max(0, row - 1) * cols + col]
-      const up = z[Math.min(rows - 1, row + 1) * cols + col]
-      const nx = -(right - left) / (col === 0 || col === cols - 1 ? pitchX : 2 * pitchX)
-      const ny = -(up - down) / (row === 0 || row === rows - 1 ? pitchY : 2 * pitchY)
-      normals[row * cols + col] = new THREE.Vector3(nx, ny, 1).normalize()
-    }
-  }
-  return normals
-}
-
 function makeSolidSurface(heightmap, topPoints, bottomZ, material, name) {
   const { cols, rows } = heightmap
   const positions = []
@@ -169,7 +154,14 @@ function makeLayer(heightmap, topPoints, bottomPoints, material, name) {
 
 export function buildMeshes(heightmap, settings) {
   const z = displacements(heightmap, settings)
-  const normals = surfaceNormals(z, heightmap.cols, heightmap.rows, heightmap.pitchX, heightmap.pitchY)
+  const femaleZ = computeSphericalEnvelope({
+    heights: z,
+    cols: heightmap.cols,
+    rows: heightmap.rows,
+    pitchX: heightmap.pitchX,
+    pitchY: heightmap.pitchY,
+    radius: settings.materialThickness,
+  })
   const malePoints = []
   const femalePoints = []
   const sheetTopPoints = []
@@ -180,11 +172,10 @@ export function buildMeshes(heightmap, settings) {
       const x = -settings.dieWidth / 2 + col * heightmap.pitchX
       const y = -settings.dieHeight / 2 + row * heightmap.pitchY
       const point = new THREE.Vector3(x, y, z[index])
-      const normal = normals[index]
       malePoints.push(point)
-      femalePoints.push(point.clone().addScaledVector(normal, settings.materialThickness))
+      femalePoints.push(new THREE.Vector3(x, y, femaleZ[index]))
       sheetBottomPoints.push(point.clone())
-      sheetTopPoints.push(point.clone().addScaledVector(normal, settings.materialThickness))
+      sheetTopPoints.push(new THREE.Vector3(x, y, femaleZ[index]))
     }
   }
   const maleMaterial = new THREE.MeshStandardMaterial({ color: 0xbec5ca, roughness: 0.32, metalness: 0.68, side: THREE.DoubleSide })

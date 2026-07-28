@@ -4,6 +4,7 @@ import { Box, Download, Eye, EyeOff, ImagePlus, RotateCcw, ScanLine, TriangleAle
 import CurveEditor from './CurveEditor'
 import Preview from './Preview'
 import { buildMeshes, geometryToBinaryStl, readHeightmap } from './geometry'
+import { GpuEnvelopeError } from './gpuEnvelope'
 
 const defaults = {
   materialThickness: 1,
@@ -72,7 +73,18 @@ export default function App() {
     return () => clearTimeout(timer)
   }, [image, settings, curve])
 
-  const meshes = useMemo(() => heightmap ? buildMeshes(heightmap, settings) : null, [heightmap, settings])
+  const meshResult = useMemo(() => {
+    if (!heightmap) return { meshes: null, error: '' }
+    try {
+      return { meshes: buildMeshes(heightmap, settings), error: '' }
+    } catch (error) {
+      const message = error instanceof GpuEnvelopeError
+        ? error.message
+        : 'The GPU envelope calculation failed. Try reducing the mesh resolution or restarting the browser.'
+      return { meshes: null, error: message }
+    }
+  }, [heightmap, settings])
+  const meshes = meshResult.meshes
 
   const exportZip = async () => {
     if (!meshes) return
@@ -146,7 +158,7 @@ export default function App() {
             </div>
           </div>
           <div className="preview">
-            {meshes ? <Preview meshes={meshes} viewMode={viewMode} visibility={visibility} cut={cut} dieWidth={settings.dieWidth} dieHeight={settings.dieHeight} /> : <div className="empty-state"><ImagePlus size={34} /><strong>Load a heightmap to begin</strong><span>The paired dies will appear here.</span></div>}
+            {meshes ? <Preview meshes={meshes} viewMode={viewMode} visibility={visibility} cut={cut} dieWidth={settings.dieWidth} dieHeight={settings.dieHeight} /> : <div className="empty-state">{meshResult.error ? <><TriangleAlert size={34} /><strong>GPU geometry unavailable</strong><span>{meshResult.error}</span></> : <><ImagePlus size={34} /><strong>Load a heightmap to begin</strong><span>The paired dies will appear here.</span></>}</div>}
             {meshes && <div className="mesh-stats"><b>{meshes.stats.vertices.toLocaleString()}</b> surface vertices <span>{meshes.stats.cols} × {meshes.stats.rows}</span></div>}
           </div>
           <div className="inspection-bar">
