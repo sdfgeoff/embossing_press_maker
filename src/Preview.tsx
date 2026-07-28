@@ -86,7 +86,7 @@ function makeHeightTexture(values, cols, rows) {
   return texture
 }
 
-function makeDisplacedSolid(geometry, maleTexture, femaleTexture, color, clippingPlane, opacity = 1) {
+function makeDisplacedSolid(geometry, maleTexture, femaleTexture, color, opacity = 1) {
   const material = new THREE.ShaderMaterial({
     vertexShader: heightSurfaceVertexShader,
     fragmentShader: heightSurfaceFragmentShader,
@@ -96,14 +96,42 @@ function makeDisplacedSolid(geometry, maleTexture, femaleTexture, color, clippin
       fixedHeight: { value: 0 },
       surfaceColor: { value: new THREE.Color(color) },
       opacity: { value: opacity },
+      sectionPlaneNormal: { value: new THREE.Vector3(1, 0, 0) },
+      sectionEnabled: { value: 0 },
     },
     clipping: true,
-    clippingPlanes: [clippingPlane],
+    clippingPlanes: [],
     side: THREE.DoubleSide,
     transparent: opacity < 1,
     depthWrite: opacity >= 1,
   })
   return new THREE.Mesh(geometry, material)
+}
+
+function applySectionCut(state, cut) {
+  state.clippingPlane.normal.set(Math.cos(cut.angle), Math.sin(cut.angle), 0)
+  state.clippingPlane.constant = -cut.position
+  for (const material of state.clippingMaterials) {
+    material.clippingPlanes = cut.enabled ? [state.clippingPlane] : []
+    material.uniforms.sectionPlaneNormal.value.copy(state.clippingPlane.normal)
+    material.uniforms.sectionEnabled.value = cut.enabled ? 1 : 0
+    material.needsUpdate = true
+  }
+}
+
+function applyPreviewLayout(state, viewMode, visibility, dieWidth) {
+  for (const group of [state.maleGroup, state.femaleGroup]) {
+    group.position.set(0, 0, 0)
+    group.rotation.set(0, 0, 0)
+  }
+  state.maleGroup.visible = visibility.male
+  state.femaleGroup.visible = visibility.female
+  state.sheetGroup.visible = visibility.sheet && viewMode === 'assembled'
+  if (viewMode === 'side') {
+    state.maleGroup.position.x = -dieWidth * .58
+    state.femaleGroup.position.x = dieWidth * .58
+    state.femaleGroup.rotation.x = Math.PI
+  }
 }
 
 function extrema(values) {
@@ -142,15 +170,15 @@ export default function Preview({ surfaces, heightmap, settings, viewMode, visib
     const femaleTexture = makeHeightTexture(surfaces.femaleZ, heightmap.cols, heightmap.rows)
     const maleMesh = makeDisplacedSolid(
       getClosedHeightfieldGeometry(dieWidth, dieHeight, heightmap.cols, heightmap.rows, 1, 0),
-      maleTexture, femaleTexture, 0xbec5ca, clippingPlane,
+      maleTexture, femaleTexture, 0xbec5ca,
     )
     const femaleMesh = makeDisplacedSolid(
       getClosedHeightfieldGeometry(dieWidth, dieHeight, heightmap.cols, heightmap.rows, 2, 0),
-      maleTexture, femaleTexture, 0x6f7c83, clippingPlane,
+      maleTexture, femaleTexture, 0x6f7c83,
     )
     const sheetMesh = makeDisplacedSolid(
       getClosedHeightfieldGeometry(dieWidth, dieHeight, heightmap.cols, heightmap.rows, 2, 1),
-      maleTexture, femaleTexture, 0xd5a947, clippingPlane,
+      maleTexture, femaleTexture, 0xd5a947,
     )
     const maleGroup = new THREE.Group()
     const femaleGroup = new THREE.Group()
@@ -183,11 +211,14 @@ export default function Preview({ surfaces, heightmap, settings, viewMode, visib
       frame = requestAnimationFrame(render)
     }
     render()
-    stateRef.current = {
+    const state = {
       renderer, controls, maleTexture, femaleTexture, maleMesh, femaleMesh, sheetMesh,
       maleGroup, femaleGroup, sheetGroup, clippingPlane,
       clippingMaterials: [maleMesh.material, femaleMesh.material, sheetMesh.material],
     }
+    stateRef.current = state
+    applySectionCut(state, cut)
+    applyPreviewLayout(state, viewMode, visibility, dieWidth)
     console.log(`Persistent closed preview setup: ${(performance.now() - setupStart).toFixed(2)} ms`)
     return () => {
       cancelAnimationFrame(frame)
@@ -220,29 +251,13 @@ export default function Preview({ surfaces, heightmap, settings, viewMode, visib
   useEffect(() => {
     const state = stateRef.current
     if (!state) return
-    for (const group of [state.maleGroup, state.femaleGroup]) {
-      group.position.set(0, 0, 0)
-      group.rotation.set(0, 0, 0)
-    }
-    state.maleGroup.visible = visibility.male
-    state.femaleGroup.visible = visibility.female
-    state.sheetGroup.visible = visibility.sheet && viewMode === 'assembled'
-    if (viewMode === 'side') {
-      state.maleGroup.position.x = -settings.dieWidth * .58
-      state.femaleGroup.position.x = settings.dieWidth * .58
-      state.femaleGroup.rotation.x = Math.PI
-    }
+    applyPreviewLayout(state, viewMode, visibility, settings.dieWidth)
   }, [viewMode, visibility, settings.dieWidth])
 
   useEffect(() => {
     const state = stateRef.current
     if (!state) return
-    state.clippingPlane.normal.set(Math.cos(cut.angle), Math.sin(cut.angle), 0)
-    state.clippingPlane.constant = -cut.position
-    for (const material of state.clippingMaterials) {
-      material.clippingPlanes = cut.enabled ? [state.clippingPlane] : []
-      material.needsUpdate = true
-    }
+    applySectionCut(state, cut)
   }, [cut])
 
   return <div ref={mountRef} className="preview-canvas" />
