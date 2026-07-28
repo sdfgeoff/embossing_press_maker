@@ -44,10 +44,13 @@ export default function CurveEditor({ points, onChange, histogram }) {
   const histogramPath = useMemo(() => makeHistogramPath(histogram), [histogram])
 
   const coordinates = useCallback((event) => {
-    const rect = svgRef.current!.getBoundingClientRect()
+    const svg = svgRef.current!
+    const screenMatrix = svg.getScreenCTM()
+    if (!screenMatrix) return { x: 0, y: 0 }
+    const pointer = new DOMPoint(event.clientX, event.clientY).matrixTransform(screenMatrix.inverse())
     return {
-      x: Math.max(0, Math.min(1, ((event.clientX - rect.left) / rect.width * size.width - margin) / plotWidth)),
-      y: Math.max(0, Math.min(1, 1 - (((event.clientY - rect.top) / rect.height * size.height - margin) / plotHeight))),
+      x: Math.max(0, Math.min(1, (pointer.x - margin) / plotWidth)),
+      y: Math.max(0, Math.min(1, 1 - ((pointer.y - margin) / plotHeight))),
     }
   }, [])
 
