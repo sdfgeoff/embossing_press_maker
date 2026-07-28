@@ -9,6 +9,8 @@ uniform vec3 sectionPlaneNormal;
 
 varying vec3 vViewPosition;
 varying vec3 vSectionPlaneNormal;
+varying vec2 vSurfaceUv;
+varying float vHeightRole;
 
 void main() {
   float height = fixedHeight;
@@ -22,6 +24,8 @@ void main() {
   vec4 mvPosition = modelViewMatrix * vec4(transformed, 1.0);
   vViewPosition = mvPosition.xyz;
   vSectionPlaneNormal = normalize(mat3(viewMatrix) * sectionPlaneNormal);
+  vSurfaceUv = uv;
+  vHeightRole = heightRole;
   gl_Position = projectionMatrix * mvPosition;
   #include <clipping_planes_vertex>
 }

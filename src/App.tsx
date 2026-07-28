@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useState } from 'react'
 import JSZip from 'jszip'
-import { Box, Download, Eye, EyeOff, ImagePlus, RotateCcw, ScanLine, TriangleAlert } from 'lucide-react'
+import { Box, Download, ImagePlus, RotateCcw, ScanLine, TriangleAlert } from 'lucide-react'
 import CurveEditor from './CurveEditor'
 import Preview from './Preview'
 import NumberField from './components/NumberField'
 import SourceImagePanel from './components/SourceImagePanel'
 import ExportProgress from './components/ExportProgress'
+import PreviewHud from './components/PreviewHud'
 import { buildMeshesFromSurfaces, buildSurfaces, geometryToBinaryStl, readHeightmap } from './geometry'
 import { GpuEnvelopeError } from './gpuEnvelope'
 import useDebouncedValue from './hooks/useDebouncedValue'
@@ -36,6 +37,9 @@ export default function App() {
   const [visibility, setVisibility] = useState({ bottom: true, sheet: true, top: true })
   const [cut, setCut] = useState({ enabled: false, position: 0, angle: 0 })
   const [explode, setExplode] = useState(0)
+  const [analysisMode, setAnalysisMode] = useState('off')
+  const [analysisScaleFactor, setAnalysisScaleFactor] = useState(1)
+  const [analysisStats, setAnalysisStats] = useState({})
   const [busy, setBusy] = useState(false)
   const [exportProgress, setExportProgress] = useState({ open: false, stage: '', detail: '', percent: 0 })
   const update = (key) => (value) => setSettings((current) => ({ ...current, [key]: value }))
@@ -111,6 +115,10 @@ export default function App() {
     }
   }, [heightmap, meshSettings])
   const surfaces = surfaceResult.surfaces
+  const analysisBaseScale = heightmap
+    ? Math.max(settings.tolerance, 2 * Math.max(heightmap.pitchX, heightmap.pitchY))
+    : settings.tolerance
+  const analysisScale = analysisBaseScale * analysisScaleFactor
 
   const showExportStage = async (stage, detail, percent) => {
     setExportProgress({ open: true, stage, detail, percent })
@@ -228,12 +236,35 @@ export default function App() {
               <span>Explode {explode.toFixed(1)} mm</span>
               <input name="explode-distance" type="range" min="0" max={Math.max(5, settings.materialThickness * 2)} step=".1" value={explode} disabled={viewMode !== 'assembled'} onChange={(event) => setExplode(Number(event.target.value))} />
             </label>
-            <div className="visibility">
-              {Object.keys(visibility).map((key) => <button key={key} className={visibility[key] ? 'active' : ''} title={`Toggle ${key}`} onClick={() => setVisibility((current) => ({ ...current, [key]: !current[key] }))}>{visibility[key] ? <Eye size={15} /> : <EyeOff size={15} />} {key}</button>)}
-            </div>
           </div>
           <div className="preview">
-            {surfaces ? <Preview surfaces={surfaces} heightmap={heightmap} settings={meshSettings} viewMode={viewMode} visibility={visibility} cut={cut} explode={explode} /> : <div className="empty-state">{surfaceResult.error ? <><TriangleAlert size={34} /><strong>GPU geometry unavailable</strong><span>{surfaceResult.error}</span></> : <><ImagePlus size={34} /><strong>Load a heightmap to begin</strong><span>The paired dies will appear here.</span></>}</div>}
+            {surfaces ? (
+              <>
+                <Preview
+                  surfaces={surfaces}
+                  heightmap={heightmap}
+                  settings={meshSettings}
+                  viewMode={viewMode}
+                  visibility={visibility}
+                  cut={cut}
+                  explode={explode}
+                  analysisMode={analysisMode}
+                  analysisScale={analysisScale}
+                  analysisStats={analysisStats}
+                  onAnalysisStats={setAnalysisStats}
+                />
+                <PreviewHud
+                  visibility={visibility}
+                  onVisibilityChange={setVisibility}
+                  analysisMode={analysisMode}
+                  onAnalysisModeChange={setAnalysisMode}
+                  analysisStats={analysisStats}
+                  analysisScale={analysisScale}
+                  analysisScaleFactor={analysisScaleFactor}
+                  onAnalysisScaleFactorChange={setAnalysisScaleFactor}
+                />
+              </>
+            ) : <div className="empty-state">{surfaceResult.error ? <><TriangleAlert size={34} /><strong>GPU geometry unavailable</strong><span>{surfaceResult.error}</span></> : <><ImagePlus size={34} /><strong>Load a heightmap to begin</strong><span>The paired dies will appear here.</span></>}</div>}
             {surfaces && <div className="mesh-stats"><b>{surfaces.stats.vertices.toLocaleString()}</b> surface vertices <span>{surfaces.stats.cols} × {surfaces.stats.rows}</span>{geometryPending && <span>Updating…</span>}</div>}
           </div>
           <div className="inspection-bar">

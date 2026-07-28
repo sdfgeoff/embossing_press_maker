@@ -3,8 +3,11 @@ import * as THREE from 'three'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 import heightSurfaceVertexShader from './shaders/heightSurface.vert?raw'
 import heightSurfaceFragmentShader from './shaders/heightSurface.frag?raw'
+import heightAnalysisVertexShader from './shaders/heightAnalysis.vert?raw'
+import heightAnalysisFragmentShader from './shaders/heightAnalysis.frag?raw'
 
 const geometryCache = new Map<string, THREE.BufferGeometry>()
+const analysisModeIds = { off: 0, slope: 1, gaussian: 2, radius: 3, strain: 4, offset: 5 }
 
 function getClosedHeightfieldGeometry(width, height, cols, rows, topRole, bottomRole) {
   const key = `${width}:${height}:${cols}:${rows}:${topRole}:${bottomRole}`
@@ -86,7 +89,7 @@ function makeHeightTexture(values, cols, rows) {
   return texture
 }
 
-function makeDisplacedSolid(geometry, maleTexture, femaleTexture, color, opacity = 1) {
+function makeDisplacedSolid(geometry, maleTexture, femaleTexture, analysisTexture, color, opacity = 1) {
   const material = new THREE.ShaderMaterial({
     vertexShader: heightSurfaceVertexShader,
     fragmentShader: heightSurfaceFragmentShader,
@@ -98,6 +101,10 @@ function makeDisplacedSolid(geometry, maleTexture, femaleTexture, color, opacity
       opacity: { value: opacity },
       sectionPlaneNormal: { value: new THREE.Vector3(1, 0, 0) },
       sectionEnabled: { value: 0 },
+      analysisTexture: { value: analysisTexture },
+      analysisMode: { value: 0 },
+      analysisRange: { value: new THREE.Vector2(0, 1) },
+      materialThickness: { value: 1 },
     },
     clipping: true,
     clippingPlanes: [],
@@ -106,6 +113,120 @@ function makeDisplacedSolid(geometry, maleTexture, femaleTexture, color, opacity
     depthWrite: opacity >= 1,
   })
   return new THREE.Mesh(geometry, material)
+}
+
+function makeAnalysisPass(cols, rows, maleTexture, femaleTexture) {
+  const target = new THREE.WebGLRenderTarget(cols, rows, {
+    format: THREE.RGBAFormat,
+    type: THREE.FloatType,
+    minFilter: THREE.NearestFilter,
+    magFilter: THREE.NearestFilter,
+    depthBuffer: false,
+    stencilBuffer: false,
+  })
+  target.texture.internalFormat = 'RGBA32F'
+  target.texture.generateMipmaps = false
+  const material = new THREE.ShaderMaterial({
+    vertexShader: heightAnalysisVertexShader,
+    fragmentShader: heightAnalysisFragmentShader,
+    uniforms: {
+      maleHeightTexture: { value: maleTexture },
+      femaleHeightTexture: { value: femaleTexture },
+      sampleOffset: { value: new THREE.Vector2(1 / Math.max(1, cols - 1), 1 / Math.max(1, rows - 1)) },
+      sampleDistance: { value: new THREE.Vector2(1, 1) },
+      materialThickness: { value: 1 },
+    },
+    depthTest: false,
+    depthWrite: false,
+  })
+  const scene = new THREE.Scene()
+  const geometry = new THREE.PlaneGeometry(2, 2)
+  scene.add(new THREE.Mesh(geometry, material))
+  return { target, material, geometry, scene, camera: new THREE.Camera(), pixels: new Float32Array(cols * rows * 4) }
+}
+
+function percentile(values, position) {
+  if (!values.length) return 0
+  values.sort((a, b) => a - b)
+  return values[Math.min(values.length - 1, Math.floor((values.length - 1) * position))]
+}
+
+function analysisStatistics(pixels, cols, rows, materialThickness, maximumRadius) {
+  const slope = []
+  const gaussianMagnitude = []
+  const radius = []
+  const strain = []
+  const offset = []
+  const stride = Math.max(1, Math.ceil((cols * rows) / 50000))
+  let sampleIndex = 0
+  for (let row = 1; row < rows - 1; row += 1) {
+    for (let col = 1; col < cols - 1; col += 1) {
+      if (sampleIndex++ % stride !== 0) continue
+      const index = (row * cols + col) * 4
+      const slopeDegrees = pixels[index] * 180 / Math.PI
+      const gaussian = pixels[index + 1]
+      const curvature = Math.max(0, pixels[index + 2])
+      const bendingStrain = Math.max(0, pixels[index + 3]) * 100
+      if (![slopeDegrees, gaussian, curvature, bendingStrain].every(Number.isFinite)) continue
+      slope.push(slopeDegrees)
+      gaussianMagnitude.push(Math.abs(gaussian))
+      if (curvature > 1 / maximumRadius) radius.push(Math.min(maximumRadius, 1 / curvature))
+      strain.push(bendingStrain)
+      offset.push(curvature * materialThickness)
+    }
+  }
+  const gaussianExtent = Math.max(0.000001, percentile(gaussianMagnitude, 0.99))
+  return {
+    slope: { low: 0, high: Math.max(0.01, percentile(slope, 0.99)) },
+    gaussian: { low: -gaussianExtent, high: gaussianExtent },
+    radius: {
+      low: Math.max(0, percentile(radius, 0.02)),
+      high: Math.max(0.01, percentile(radius, 0.95)),
+    },
+    strain: { low: 0, high: Math.max(0.001, percentile(strain, 0.99)) },
+    offset: { low: 0, high: Math.max(0.001, percentile(offset, 0.99)) },
+  }
+}
+
+function computeAnalysis(state, heightmap, materialThickness, analysisScale) {
+  const start = performance.now()
+  const radiusX = Math.max(1, Math.min(Math.floor((heightmap.cols - 1) / 4), Math.round(analysisScale / heightmap.pitchX)))
+  const radiusY = Math.max(1, Math.min(Math.floor((heightmap.rows - 1) / 4), Math.round(analysisScale / heightmap.pitchY)))
+  state.analysis.material.uniforms.sampleOffset.value.set(
+    radiusX / Math.max(1, heightmap.cols - 1),
+    radiusY / Math.max(1, heightmap.rows - 1),
+  )
+  state.analysis.material.uniforms.sampleDistance.value.set(radiusX * heightmap.pitchX, radiusY * heightmap.pitchY)
+  state.analysis.material.uniforms.materialThickness.value = materialThickness
+  const previousTarget = state.renderer.getRenderTarget()
+  state.renderer.setRenderTarget(state.analysis.target)
+  state.renderer.render(state.analysis.scene, state.analysis.camera)
+  state.renderer.readRenderTargetPixels(
+    state.analysis.target,
+    0,
+    0,
+    heightmap.cols,
+    heightmap.rows,
+    state.analysis.pixels,
+  )
+  state.renderer.setRenderTarget(previousTarget)
+  console.log(`GPU height analysis + statistics: ${(performance.now() - start).toFixed(2)} ms`)
+  return analysisStatistics(
+    state.analysis.pixels,
+    heightmap.cols,
+    heightmap.rows,
+    materialThickness,
+    Math.max(heightmap.cols * heightmap.pitchX, heightmap.rows * heightmap.pitchY) * 10,
+  )
+}
+
+function applyAnalysisDisplay(state, mode, stats, materialThickness) {
+  const range = stats?.[mode] || { low: 0, high: 1 }
+  for (const material of state.clippingMaterials) {
+    material.uniforms.analysisMode.value = analysisModeIds[mode] || 0
+    material.uniforms.analysisRange.value.set(range.low, range.high)
+    material.uniforms.materialThickness.value = materialThickness
+  }
 }
 
 function applySectionCut(state, cut) {
@@ -160,7 +281,19 @@ function extrema(values) {
   return { min, max }
 }
 
-export default function Preview({ surfaces, heightmap, settings, viewMode, visibility, cut, explode }) {
+export default function Preview({
+  surfaces,
+  heightmap,
+  settings,
+  viewMode,
+  visibility,
+  cut,
+  explode,
+  analysisMode,
+  analysisScale,
+  analysisStats,
+  onAnalysisStats,
+}) {
   const mountRef = useRef(null)
   const stateRef = useRef(null)
 
@@ -187,17 +320,18 @@ export default function Preview({ surfaces, heightmap, settings, viewMode, visib
     const clippingPlane = new THREE.Plane(new THREE.Vector3(1, 0, 0), 0)
     const maleTexture = makeHeightTexture(surfaces.maleZ, heightmap.cols, heightmap.rows)
     const femaleTexture = makeHeightTexture(surfaces.femaleZ, heightmap.cols, heightmap.rows)
+    const analysis = makeAnalysisPass(heightmap.cols, heightmap.rows, maleTexture, femaleTexture)
     const maleMesh = makeDisplacedSolid(
       getClosedHeightfieldGeometry(dieWidth, dieHeight, heightmap.cols, heightmap.rows, 1, 0),
-      maleTexture, femaleTexture, 0xbec5ca,
+      maleTexture, femaleTexture, analysis.target.texture, 0xbec5ca,
     )
     const femaleMesh = makeDisplacedSolid(
       getClosedHeightfieldGeometry(dieWidth, dieHeight, heightmap.cols, heightmap.rows, 0, 2),
-      maleTexture, femaleTexture, 0x6f7c83,
+      maleTexture, femaleTexture, analysis.target.texture, 0x6f7c83,
     )
     const sheetMesh = makeDisplacedSolid(
       getClosedHeightfieldGeometry(dieWidth, dieHeight, heightmap.cols, heightmap.rows, 2, 1),
-      maleTexture, femaleTexture, 0xd5a947,
+      maleTexture, femaleTexture, analysis.target.texture, 0xd5a947,
     )
     const maleGroup = new THREE.Group()
     const femaleGroup = new THREE.Group()
@@ -231,13 +365,14 @@ export default function Preview({ surfaces, heightmap, settings, viewMode, visib
     }
     render()
     const state = {
-      renderer, camera, controls, maleTexture, femaleTexture, maleMesh, femaleMesh, sheetMesh,
+      renderer, camera, controls, maleTexture, femaleTexture, analysis, maleMesh, femaleMesh, sheetMesh,
       maleGroup, femaleGroup, sheetGroup, clippingPlane,
       clippingMaterials: [maleMesh.material, femaleMesh.material, sheetMesh.material],
     }
     stateRef.current = state
     applySectionCut(state, cut)
     applyPreviewLayout(state, viewMode, visibility, dieWidth, settings.materialThickness, explode)
+    applyAnalysisDisplay(state, analysisMode, analysisStats, settings.materialThickness)
     framePreview(state, viewMode, dieWidth, dieHeight)
     console.log(`Persistent closed preview setup: ${(performance.now() - setupStart).toFixed(2)} ms`)
     return () => {
@@ -246,6 +381,9 @@ export default function Preview({ surfaces, heightmap, settings, viewMode, visib
       controls.dispose()
       maleTexture.dispose()
       femaleTexture.dispose()
+      analysis.target.dispose()
+      analysis.material.dispose()
+      analysis.geometry.dispose()
       for (const material of stateRef.current?.clippingMaterials || []) material.dispose()
       renderer.dispose()
       stateRef.current = null
@@ -267,6 +405,19 @@ export default function Preview({ surfaces, heightmap, settings, viewMode, visib
     state.femaleMesh.material.uniforms.fixedHeight.value = femaleRange.max + settings.backingThickness
     console.log(`Closed preview texture update: ${(performance.now() - updateStart).toFixed(2)} ms`)
   }, [surfaces, settings.backingThickness])
+
+  useEffect(() => {
+    const state = stateRef.current
+    if (!state) return
+    const stats = computeAnalysis(state, heightmap, settings.materialThickness, analysisScale)
+    onAnalysisStats(stats)
+  }, [surfaces, heightmap, settings.materialThickness, analysisScale, onAnalysisStats])
+
+  useEffect(() => {
+    const state = stateRef.current
+    if (!state) return
+    applyAnalysisDisplay(state, analysisMode, analysisStats, settings.materialThickness)
+  }, [analysisMode, analysisStats, settings.materialThickness])
 
   useEffect(() => {
     const state = stateRef.current
