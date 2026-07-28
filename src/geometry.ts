@@ -1,26 +1,8 @@
 import * as THREE from 'three'
 import { computeSphericalEnvelope, type TimingEntry } from './gpuEnvelope'
+import { prepareCurve, samplePreparedCurve } from './curve'
 
 const clamp = (value, min, max) => Math.max(min, Math.min(max, value))
-
-export function sampleCurve(points, x) {
-  const sorted = [...points].sort((a, b) => a.x - b.x)
-  if (x <= sorted[0].x) return sorted[0].y
-  if (x >= sorted.at(-1).x) return sorted.at(-1).y
-  const index = sorted.findIndex((point) => point.x >= x)
-  const p0 = sorted[Math.max(0, index - 2)]
-  const p1 = sorted[index - 1]
-  const p2 = sorted[index]
-  const p3 = sorted[Math.min(sorted.length - 1, index + 1)]
-  const t = (x - p1.x) / Math.max(0.00001, p2.x - p1.x)
-  const y = 0.5 * (
-    2 * p1.y +
-    (-p0.y + p2.y) * t +
-    (2 * p0.y - 5 * p1.y + 4 * p2.y - p3.y) * t * t +
-    (-p0.y + 3 * p1.y - 3 * p2.y + p3.y) * t * t * t
-  )
-  return clamp(y, 0, 1)
-}
 
 export function readHeightmap(image, settings, curvePoints) {
   const totalStart = performance.now()
@@ -43,7 +25,19 @@ export function readHeightmap(image, settings, curvePoints) {
   context.drawImage(image, 0, 0)
   const pixels = context.getImageData(0, 0, image.width, image.height).data
   const values = new Float32Array(cols * rows)
-  const histogram = new Uint32Array(64)
+  const histogram = new Float32Array(64)
+  const preparedCurve = prepareCurve(curvePoints)
+
+  for (let offset = 0; offset < pixels.length; offset += 4) {
+    const alpha = pixels[offset + 3] / 255
+    if (alpha === 0) continue
+    const luminance = (
+      0.2126 * pixels[offset] +
+      0.7152 * pixels[offset + 1] +
+      0.0722 * pixels[offset + 2]
+    ) / 255
+    histogram[Math.min(63, Math.floor(luminance * 64))] += alpha
+  }
 
   for (let row = 0; row < rows; row += 1) {
     const y = (row / (rows - 1) - 0.5) * settings.dieHeight
@@ -62,9 +56,8 @@ export function readHeightmap(image, settings, curvePoints) {
           0.0722 * pixels[offset + 2]
         ) / 255
         const alpha = pixels[offset + 3] / 255
-        const curved = sampleCurve(curvePoints, luminance)
+        const curved = samplePreparedCurve(preparedCurve, luminance)
         value = curved * alpha + settings.neutral * (1 - alpha)
-        histogram[Math.min(63, Math.floor(luminance * 64))] += 1
       }
       if (settings.invert) value = 1 - value
       values[row * cols + col] = value

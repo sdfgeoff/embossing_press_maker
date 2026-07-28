@@ -241,7 +241,7 @@ export default function App() {
           </div>
           <div className="curve-panel">
             <div className="curve-heading"><div><h2>Height transfer</h2><span>Double-click to add or remove a point</span></div><button onClick={() => setCurve([{ x: 0, y: 0 }, { x: 1, y: 1 }])}>Reset linear</button></div>
-            <CurveEditor points={curve} onChange={setCurve} histogram={heightmap?.histogram || new Uint32Array(64)} />
+            <CurveEditor points={curve} onChange={setCurve} histogram={heightmap?.histogram || new Float32Array(64)} />
           </div>
         </section>
       </section>
