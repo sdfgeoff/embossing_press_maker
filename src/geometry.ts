@@ -199,7 +199,7 @@ function makeHeightfieldMesh(heightmap, upperZ, lowerZ, material, name, reverse 
   return new THREE.Mesh(geometry, material)
 }
 
-export function buildMeshes(heightmap, settings) {
+export function buildSurfaces(heightmap, settings) {
   const totalStart = performance.now()
   const timings: TimingEntry[] = []
   const displacementStart = performance.now()
@@ -217,9 +217,27 @@ export function buildMeshes(heightmap, settings) {
     femaleZ = sphericalDilation(heightmap, z, settings.materialThickness, timings, 'top dilation')
   }
 
+  const totalDuration = performance.now() - totalStart
+  console.groupCollapsed(`Embossing surfaces: ${totalDuration.toFixed(1)} ms (${settings.surfaceReference})`)
+  console.table(timings.map(({ phase, durationMs, details = '' }) => ({
+    phase,
+    'time (ms)': Number(durationMs.toFixed(2)),
+    details,
+  })))
+  console.groupEnd()
+  return {
+    maleZ,
+    femaleZ,
+    stats: { vertices: heightmap.cols * heightmap.rows, cols: heightmap.cols, rows: heightmap.rows },
+  }
+}
+
+export function buildMeshesFromSurfaces(heightmap, settings, surfaces, includeSheet = true) {
+  const totalStart = performance.now()
+  const timings: TimingEntry[] = []
+  const { maleZ, femaleZ } = surfaces
   const maleMaterial = new THREE.MeshStandardMaterial({ color: 0xbec5ca, roughness: 0.32, metalness: 0.68, side: THREE.DoubleSide })
   const femaleMaterial = new THREE.MeshStandardMaterial({ color: 0x6f7c83, roughness: 0.38, metalness: 0.58, side: THREE.DoubleSide })
-  const sheetMaterial = new THREE.MeshStandardMaterial({ color: 0xd5a947, roughness: 0.6, metalness: 0.05, side: THREE.DoubleSide })
   let minZ = Infinity
   let maxFemaleZ = -Infinity
   for (let index = 0; index < maleZ.length; index += 1) {
@@ -232,9 +250,13 @@ export function buildMeshes(heightmap, settings) {
   const femaleStart = performance.now()
   const female = makeHeightfieldMesh(heightmap, femaleZ, maxFemaleZ + settings.backingThickness, femaleMaterial, 'female', true)
   timings.push({ phase: 'Build female typed mesh + normals', durationMs: performance.now() - femaleStart })
-  const sheetStart = performance.now()
-  const sheet = makeHeightfieldMesh(heightmap, femaleZ, maleZ, sheetMaterial, 'sheet')
-  timings.push({ phase: 'Build material typed mesh + normals', durationMs: performance.now() - sheetStart })
+  let sheet = null
+  if (includeSheet) {
+    const sheetMaterial = new THREE.MeshStandardMaterial({ color: 0xd5a947, roughness: 0.6, metalness: 0.05, side: THREE.DoubleSide })
+    const sheetStart = performance.now()
+    sheet = makeHeightfieldMesh(heightmap, femaleZ, maleZ, sheetMaterial, 'sheet')
+    timings.push({ phase: 'Build material typed mesh + normals', durationMs: performance.now() - sheetStart })
+  }
   const totalDuration = performance.now() - totalStart
   console.groupCollapsed(`Embossing geometry: ${totalDuration.toFixed(1)} ms (${settings.surfaceReference})`)
   console.table(timings.map(({ phase, durationMs, details = '' }) => ({
@@ -244,7 +266,12 @@ export function buildMeshes(heightmap, settings) {
   })))
   console.log(`Total: ${totalDuration.toFixed(2)} ms; surface: ${heightmap.cols} x ${heightmap.rows}`)
   console.groupEnd()
-  return { male, female, sheet, stats: { vertices: heightmap.cols * heightmap.rows, cols: heightmap.cols, rows: heightmap.rows } }
+  return { male, female, sheet, stats: surfaces.stats }
+}
+
+export function buildMeshes(heightmap, settings) {
+  const surfaces = buildSurfaces(heightmap, settings)
+  return buildMeshesFromSurfaces(heightmap, settings, surfaces)
 }
 
 export function geometryToBinaryStl(geometry, name = 'die') {

@@ -5,7 +5,8 @@ import CurveEditor from './CurveEditor'
 import Preview from './Preview'
 import NumberField from './components/NumberField'
 import SourceImagePanel from './components/SourceImagePanel'
-import { buildMeshes, geometryToBinaryStl, readHeightmap } from './geometry'
+import ExportProgress from './components/ExportProgress'
+import { buildMeshesFromSurfaces, buildSurfaces, geometryToBinaryStl, readHeightmap } from './geometry'
 import { GpuEnvelopeError } from './gpuEnvelope'
 import useDebouncedValue from './hooks/useDebouncedValue'
 
@@ -35,6 +36,7 @@ export default function App() {
   const [visibility, setVisibility] = useState({ male: true, female: true, sheet: true })
   const [cut, setCut] = useState({ enabled: false, position: 0, angle: 0 })
   const [busy, setBusy] = useState(false)
+  const [exportProgress, setExportProgress] = useState({ open: false, stage: '', detail: '', percent: 0 })
   const update = (key) => (value) => setSettings((current) => ({ ...current, [key]: value }))
   const geometrySettings = useMemo(() => ({
     materialThickness: settings.materialThickness,
@@ -55,7 +57,7 @@ export default function App() {
     settings.invert,
     settings.surfaceReference,
   ])
-  const meshSettings = useDebouncedValue(geometrySettings, 300)
+  const meshSettings = useDebouncedValue(geometrySettings, 100)
   const geometryPending = meshSettings !== geometrySettings
   const samplingSettings = useMemo(() => ({
     imageWidth: settings.imageWidth,
@@ -96,47 +98,70 @@ export default function App() {
     return () => clearTimeout(timer)
   }, [image, samplingSettings, curve])
 
-  const meshResult = useMemo(() => {
-    if (!heightmap) return { meshes: null, error: '' }
+  const surfaceResult = useMemo(() => {
+    if (!heightmap) return { surfaces: null, error: '' }
     try {
-      return { meshes: buildMeshes(heightmap, meshSettings), error: '' }
+      return { surfaces: buildSurfaces(heightmap, meshSettings), error: '' }
     } catch (error) {
       const message = error instanceof GpuEnvelopeError
         ? error.message
         : 'The GPU envelope calculation failed. Try reducing the mesh resolution or restarting the browser.'
-      return { meshes: null, error: message }
+      return { surfaces: null, error: message }
     }
   }, [heightmap, meshSettings])
-  const meshes = meshResult.meshes
+  const surfaces = surfaceResult.surfaces
+
+  const showExportStage = async (stage, detail, percent) => {
+    setExportProgress({ open: true, stage, detail, percent })
+    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))
+  }
 
   const exportZip = async () => {
-    if (!meshes) return
+    if (!surfaces || !heightmap) return
     setBusy(true)
     const totalStart = performance.now()
     const timings = []
     try {
+      await showExportStage('Building printable solids', 'Generating indexed meshes and surface normals', 12)
+      const meshStart = performance.now()
+      const meshes = buildMeshesFromSurfaces(heightmap, meshSettings, surfaces, false)
+      timings.push({ phase: 'Build printable meshes', 'time (ms)': Number((performance.now() - meshStart).toFixed(2)) })
       const zip = new JSZip()
+      await showExportStage('Serializing male die', 'Writing binary STL triangles', 34)
       const maleStart = performance.now()
       zip.file('embossing-die-male.stl', geometryToBinaryStl(meshes.male.geometry, 'male'))
       timings.push({ phase: 'Serialize male STL', 'time (ms)': Number((performance.now() - maleStart).toFixed(2)) })
+      await showExportStage('Serializing female die', 'Writing binary STL triangles', 56)
       const femaleStart = performance.now()
       zip.file('embossing-die-female.stl', geometryToBinaryStl(meshes.female.geometry, 'female'))
       timings.push({ phase: 'Serialize female STL', 'time (ms)': Number((performance.now() - femaleStart).toFixed(2)) })
+      await showExportStage('Compressing die pair', 'Creating the ZIP archive', 72)
       const zipStart = performance.now()
-      const blob = await zip.generateAsync({ type: 'blob', compression: 'DEFLATE' })
+      const blob = await zip.generateAsync(
+        { type: 'blob', compression: 'DEFLATE' },
+        ({ percent }) => setExportProgress({ open: true, stage: 'Compressing die pair', detail: 'Creating the ZIP archive', percent: 72 + percent * .24 }),
+      )
       timings.push({ phase: 'Compress ZIP', 'time (ms)': Number((performance.now() - zipStart).toFixed(2)) })
+      await showExportStage('Preparing download', `${(blob.size / 1024 / 1024).toFixed(2)} MiB archive`, 98)
       const url = URL.createObjectURL(blob)
       const link = document.createElement('a')
       link.href = url
       link.download = 'embossing-dies.zip'
       link.click()
       URL.revokeObjectURL(url)
+      for (const mesh of [meshes.male, meshes.female]) {
+        mesh.geometry.dispose()
+        mesh.material.dispose()
+      }
       console.groupCollapsed(`Embossing export: ${(performance.now() - totalStart).toFixed(1)} ms`)
       console.table(timings)
       console.log(`ZIP size: ${(blob.size / 1024 / 1024).toFixed(2)} MiB`)
       console.groupEnd()
+      setExportProgress({ open: true, stage: 'Export complete', detail: 'Your STL pair has downloaded', percent: 100 })
+      await new Promise((resolve) => setTimeout(resolve, 650))
     } finally {
       setBusy(false)
+      setExportProgress((current) => ({ ...current, open: false }))
     }
   }
 
@@ -144,7 +169,7 @@ export default function App() {
     <main>
       <header>
         <div className="brand"><span className="brand-mark"><Box size={19} /></span><div><strong>RELIEF PRESS</strong><small>Embossing die generator</small></div></div>
-        <button className="primary" disabled={!meshes || busy || geometryPending} onClick={exportZip}><Download size={17} />{busy ? 'Packaging…' : geometryPending ? 'Updating…' : 'Export STL pair'}</button>
+        <button className="primary" disabled={!surfaces || busy || geometryPending} onClick={exportZip}><Download size={17} />{busy ? 'Packaging…' : geometryPending ? 'Updating…' : 'Export STL pair'}</button>
       </header>
       <section className="workspace">
         <aside className="controls">
@@ -203,8 +228,8 @@ export default function App() {
             </div>
           </div>
           <div className="preview">
-            {meshes ? <Preview meshes={meshes} viewMode={viewMode} visibility={visibility} cut={cut} dieWidth={settings.dieWidth} dieHeight={settings.dieHeight} /> : <div className="empty-state">{meshResult.error ? <><TriangleAlert size={34} /><strong>GPU geometry unavailable</strong><span>{meshResult.error}</span></> : <><ImagePlus size={34} /><strong>Load a heightmap to begin</strong><span>The paired dies will appear here.</span></>}</div>}
-            {meshes && <div className="mesh-stats"><b>{meshes.stats.vertices.toLocaleString()}</b> surface vertices <span>{meshes.stats.cols} × {meshes.stats.rows}</span>{geometryPending && <span>Updating…</span>}</div>}
+            {surfaces ? <Preview surfaces={surfaces} heightmap={heightmap} settings={meshSettings} viewMode={viewMode} visibility={visibility} cut={cut} /> : <div className="empty-state">{surfaceResult.error ? <><TriangleAlert size={34} /><strong>GPU geometry unavailable</strong><span>{surfaceResult.error}</span></> : <><ImagePlus size={34} /><strong>Load a heightmap to begin</strong><span>The paired dies will appear here.</span></>}</div>}
+            {surfaces && <div className="mesh-stats"><b>{surfaces.stats.vertices.toLocaleString()}</b> surface vertices <span>{surfaces.stats.cols} × {surfaces.stats.rows}</span>{geometryPending && <span>Updating…</span>}</div>}
           </div>
           <div className="inspection-bar">
             <button className={cut.enabled ? 'icon-button active' : 'icon-button'} title="Toggle section plane" onClick={() => setCut((current) => ({ ...current, enabled: !current.enabled }))}><ScanLine size={18} /></button>
@@ -218,6 +243,7 @@ export default function App() {
           </div>
         </section>
       </section>
+      <ExportProgress {...exportProgress} />
     </main>
   )
 }
