@@ -230,11 +230,7 @@ export default function Preview({ surfaces, heightmap, settings, viewMode, visib
     if (viewMode === 'side') {
       state.maleGroup.position.x = -settings.dieWidth * .58
       state.femaleGroup.position.x = settings.dieWidth * .58
-    } else if (viewMode === 'face') {
-      state.maleGroup.position.x = -settings.dieWidth * .58
-      state.maleGroup.rotation.y = -.35
-      state.femaleGroup.position.x = settings.dieWidth * .58
-      state.femaleGroup.rotation.y = .35
+      state.femaleGroup.rotation.x = Math.PI
     }
   }, [viewMode, visibility, settings.dieWidth])
 

@@ -221,7 +221,7 @@ export default function App() {
         <section className="stage">
           <div className="stage-toolbar">
             <div className="segmented">
-              {['side', 'face', 'assembled'].map((mode) => <button key={mode} className={viewMode === mode ? 'active' : ''} onClick={() => setViewMode(mode)}>{mode === 'side' ? 'Side by side' : mode === 'face' ? 'Face to face' : 'Embossed sheet'}</button>)}
+              {['side', 'assembled'].map((mode) => <button key={mode} className={viewMode === mode ? 'active' : ''} onClick={() => setViewMode(mode)}>{mode === 'side' ? 'Side by side' : 'Embossed sheet'}</button>)}
             </div>
             <div className="visibility">
               {Object.keys(visibility).map((key) => <button key={key} className={visibility[key] ? 'active' : ''} title={`Toggle ${key}`} onClick={() => setVisibility((current) => ({ ...current, [key]: !current[key] }))}>{visibility[key] ? <Eye size={15} /> : <EyeOff size={15} />} {key}</button>)}
