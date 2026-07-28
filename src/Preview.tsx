@@ -173,7 +173,7 @@ export default function Preview({ surfaces, heightmap, settings, viewMode, visib
       maleTexture, femaleTexture, 0xbec5ca,
     )
     const femaleMesh = makeDisplacedSolid(
-      getClosedHeightfieldGeometry(dieWidth, dieHeight, heightmap.cols, heightmap.rows, 2, 0),
+      getClosedHeightfieldGeometry(dieWidth, dieHeight, heightmap.cols, heightmap.rows, 0, 2),
       maleTexture, femaleTexture, 0x6f7c83,
     )
     const sheetMesh = makeDisplacedSolid(
