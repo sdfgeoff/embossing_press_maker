@@ -4,15 +4,75 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 import heightSurfaceVertexShader from './shaders/heightSurface.vert?raw'
 import heightSurfaceFragmentShader from './shaders/heightSurface.frag?raw'
 
-const gridCache = new Map<string, THREE.PlaneGeometry>()
+const geometryCache = new Map<string, THREE.BufferGeometry>()
 
-function getGridGeometry(width, height, cols, rows) {
-  const key = `${width}:${height}:${cols}:${rows}`
-  let geometry = gridCache.get(key)
-  if (!geometry) {
-    geometry = new THREE.PlaneGeometry(width, height, cols - 1, rows - 1)
-    gridCache.set(key, geometry)
+function getClosedHeightfieldGeometry(width, height, cols, rows, topRole, bottomRole) {
+  const key = `${width}:${height}:${cols}:${rows}:${topRole}:${bottomRole}`
+  const cached = geometryCache.get(key)
+  if (cached) return cached
+
+  const surfaceVertices = cols * rows
+  const boundaryLength = 2 * cols + 2 * rows - 4
+  const positions = new Float32Array(surfaceVertices * 2 * 3)
+  const uvs = new Float32Array(surfaceVertices * 2 * 2)
+  const roles = new Float32Array(surfaceVertices * 2)
+  for (let row = 0; row < rows; row += 1) {
+    const v = row / (rows - 1)
+    const y = (v - .5) * height
+    for (let col = 0; col < cols; col += 1) {
+      const u = col / (cols - 1)
+      const x = (u - .5) * width
+      const index = row * cols + col
+      for (let layer = 0; layer < 2; layer += 1) {
+        const vertex = layer * surfaceVertices + index
+        positions[vertex * 3] = x
+        positions[vertex * 3 + 1] = y
+        uvs[vertex * 2] = u
+        uvs[vertex * 2 + 1] = v
+        roles[vertex] = layer === 0 ? topRole : bottomRole
+      }
+    }
   }
+
+  const indexCount = (cols - 1) * (rows - 1) * 12 + boundaryLength * 6
+  const indices = surfaceVertices * 2 > 65535 ? new Uint32Array(indexCount) : new Uint16Array(indexCount)
+  let cursor = 0
+  const triangle = (a, b, c) => {
+    indices[cursor++] = a
+    indices[cursor++] = b
+    indices[cursor++] = c
+  }
+  for (let row = 0; row < rows - 1; row += 1) {
+    for (let col = 0; col < cols - 1; col += 1) {
+      const a = row * cols + col
+      const b = a + 1
+      const c = a + cols
+      const d = c + 1
+      triangle(a, b, d)
+      triangle(a, d, c)
+      triangle(surfaceVertices + a, surfaceVertices + d, surfaceVertices + b)
+      triangle(surfaceVertices + a, surfaceVertices + c, surfaceVertices + d)
+    }
+  }
+  const boundary = new Uint32Array(boundaryLength)
+  let boundaryCursor = 0
+  for (let col = 0; col < cols; col += 1) boundary[boundaryCursor++] = col
+  for (let row = 1; row < rows; row += 1) boundary[boundaryCursor++] = row * cols + cols - 1
+  for (let col = cols - 2; col >= 0; col -= 1) boundary[boundaryCursor++] = (rows - 1) * cols + col
+  for (let row = rows - 2; row > 0; row -= 1) boundary[boundaryCursor++] = row * cols
+  for (let index = 0; index < boundary.length; index += 1) {
+    const a = boundary[index]
+    const b = boundary[(index + 1) % boundary.length]
+    triangle(a, surfaceVertices + a, surfaceVertices + b)
+    triangle(a, surfaceVertices + b, b)
+  }
+
+  const geometry = new THREE.BufferGeometry()
+  geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3))
+  geometry.setAttribute('uv', new THREE.BufferAttribute(uvs, 2))
+  geometry.setAttribute('heightRole', new THREE.BufferAttribute(roles, 1))
+  geometry.setIndex(new THREE.BufferAttribute(indices, 1))
+  geometryCache.set(key, geometry)
   return geometry
 }
 
@@ -26,14 +86,14 @@ function makeHeightTexture(values, cols, rows) {
   return texture
 }
 
-function makeSurfaceMesh(geometry, texture, color, pitchX, pitchY, clippingPlane, opacity = 1) {
+function makeDisplacedSolid(geometry, maleTexture, femaleTexture, color, clippingPlane, opacity = 1) {
   const material = new THREE.ShaderMaterial({
     vertexShader: heightSurfaceVertexShader,
     fragmentShader: heightSurfaceFragmentShader,
     uniforms: {
-      heightTexture: { value: texture },
-      texelSize: { value: new THREE.Vector2(1 / texture.image.width, 1 / texture.image.height) },
-      samplePitch: { value: new THREE.Vector2(pitchX, pitchY) },
+      maleHeightTexture: { value: maleTexture },
+      femaleHeightTexture: { value: femaleTexture },
+      fixedHeight: { value: 0 },
       surfaceColor: { value: new THREE.Color(color) },
       opacity: { value: opacity },
     },
@@ -78,31 +138,26 @@ export default function Preview({ surfaces, heightmap, settings, viewMode, visib
     controls.target.set(0, 0, 0)
 
     const clippingPlane = new THREE.Plane(new THREE.Vector3(1, 0, 0), 0)
-    const geometry = getGridGeometry(dieWidth, dieHeight, heightmap.cols, heightmap.rows)
     const maleTexture = makeHeightTexture(surfaces.maleZ, heightmap.cols, heightmap.rows)
     const femaleTexture = makeHeightTexture(surfaces.femaleZ, heightmap.cols, heightmap.rows)
+    const maleMesh = makeDisplacedSolid(
+      getClosedHeightfieldGeometry(dieWidth, dieHeight, heightmap.cols, heightmap.rows, 1, 0),
+      maleTexture, femaleTexture, 0xbec5ca, clippingPlane,
+    )
+    const femaleMesh = makeDisplacedSolid(
+      getClosedHeightfieldGeometry(dieWidth, dieHeight, heightmap.cols, heightmap.rows, 2, 0),
+      maleTexture, femaleTexture, 0x6f7c83, clippingPlane,
+    )
+    const sheetMesh = makeDisplacedSolid(
+      getClosedHeightfieldGeometry(dieWidth, dieHeight, heightmap.cols, heightmap.rows, 2, 1),
+      maleTexture, femaleTexture, 0xd5a947, clippingPlane,
+    )
     const maleGroup = new THREE.Group()
     const femaleGroup = new THREE.Group()
     const sheetGroup = new THREE.Group()
-    const clippingMaterials = []
-
-    const maleSurface = makeSurfaceMesh(geometry, maleTexture, 0xbec5ca, heightmap.pitchX, heightmap.pitchY, clippingPlane)
-    const femaleSurface = makeSurfaceMesh(geometry, femaleTexture, 0x6f7c83, heightmap.pitchX, heightmap.pitchY, clippingPlane)
-    const sheetBottom = makeSurfaceMesh(geometry, maleTexture, 0xd5a947, heightmap.pitchX, heightmap.pitchY, clippingPlane, .72)
-    const sheetTop = makeSurfaceMesh(geometry, femaleTexture, 0xd5a947, heightmap.pitchX, heightmap.pitchY, clippingPlane, .72)
-    clippingMaterials.push(maleSurface.material, femaleSurface.material, sheetBottom.material, sheetTop.material)
-    maleGroup.add(maleSurface)
-    femaleGroup.add(femaleSurface)
-    sheetGroup.add(sheetBottom, sheetTop)
-
-    const maleBaseMaterial = new THREE.MeshStandardMaterial({ color: 0x9ca5aa, roughness: .38, metalness: .55, clippingPlanes: [clippingPlane] })
-    const femaleBaseMaterial = new THREE.MeshStandardMaterial({ color: 0x59666c, roughness: .4, metalness: .5, clippingPlanes: [clippingPlane] })
-    const baseGeometry = new THREE.BoxGeometry(dieWidth, dieHeight, 1)
-    const maleBase = new THREE.Mesh(baseGeometry, maleBaseMaterial)
-    const femaleBase = new THREE.Mesh(baseGeometry, femaleBaseMaterial)
-    clippingMaterials.push(maleBaseMaterial, femaleBaseMaterial)
-    maleGroup.add(maleBase)
-    femaleGroup.add(femaleBase)
+    maleGroup.add(maleMesh)
+    femaleGroup.add(femaleMesh)
+    sheetGroup.add(sheetMesh)
     scene.add(maleGroup, femaleGroup, sheetGroup)
 
     const floor = new THREE.GridHelper(Math.max(dieWidth, dieHeight) * 3, 18, 0x596064, 0x303638)
@@ -110,9 +165,6 @@ export default function Preview({ surfaces, heightmap, settings, viewMode, visib
     floor.position.z = -Math.max(dieWidth, dieHeight) * .4
     scene.add(floor)
     scene.add(new THREE.HemisphereLight(0xe7f1ef, 0x33383a, 2.1))
-    const key = new THREE.DirectionalLight(0xffffff, 3.2)
-    key.position.set(-30, -40, 60)
-    scene.add(key)
 
     const resize = () => {
       const width = mount.clientWidth
@@ -132,35 +184,23 @@ export default function Preview({ surfaces, heightmap, settings, viewMode, visib
     }
     render()
     stateRef.current = {
-      renderer,
-      controls,
-      scene,
-      geometry,
-      baseGeometry,
-      maleTexture,
-      femaleTexture,
-      maleGroup,
-      femaleGroup,
-      sheetGroup,
-      maleBase,
-      femaleBase,
-      clippingPlane,
-      clippingMaterials,
+      renderer, controls, maleTexture, femaleTexture, maleMesh, femaleMesh, sheetMesh,
+      maleGroup, femaleGroup, sheetGroup, clippingPlane,
+      clippingMaterials: [maleMesh.material, femaleMesh.material, sheetMesh.material],
     }
-    console.log(`Persistent preview setup: ${(performance.now() - setupStart).toFixed(2)} ms`)
+    console.log(`Persistent closed preview setup: ${(performance.now() - setupStart).toFixed(2)} ms`)
     return () => {
       cancelAnimationFrame(frame)
       observer.disconnect()
       controls.dispose()
       maleTexture.dispose()
       femaleTexture.dispose()
-      baseGeometry.dispose()
-      for (const material of clippingMaterials) material.dispose()
+      for (const material of stateRef.current?.clippingMaterials || []) material.dispose()
       renderer.dispose()
       stateRef.current = null
       mount.removeChild(renderer.domElement)
     }
-  }, [heightmap.cols, heightmap.rows, heightmap.pitchX, heightmap.pitchY, settings.dieWidth, settings.dieHeight])
+  }, [heightmap.cols, heightmap.rows, settings.dieWidth, settings.dieHeight])
 
   useEffect(() => {
     const state = stateRef.current
@@ -172,11 +212,9 @@ export default function Preview({ surfaces, heightmap, settings, viewMode, visib
     state.femaleTexture.needsUpdate = true
     const maleRange = extrema(surfaces.maleZ)
     const femaleRange = extrema(surfaces.femaleZ)
-    state.maleBase.scale.z = settings.backingThickness
-    state.femaleBase.scale.z = settings.backingThickness
-    state.maleBase.position.z = maleRange.min - settings.backingThickness / 2
-    state.femaleBase.position.z = femaleRange.max + settings.backingThickness / 2
-    console.log(`Preview texture update: ${(performance.now() - updateStart).toFixed(2)} ms`)
+    state.maleMesh.material.uniforms.fixedHeight.value = maleRange.min - settings.backingThickness
+    state.femaleMesh.material.uniforms.fixedHeight.value = femaleRange.max + settings.backingThickness
+    console.log(`Closed preview texture update: ${(performance.now() - updateStart).toFixed(2)} ms`)
   }, [surfaces, settings.backingThickness])
 
   useEffect(() => {
