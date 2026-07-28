@@ -160,6 +160,7 @@ export default function Preview({ surfaces, heightmap, settings, viewMode, visib
     const scene = new THREE.Scene()
     scene.background = new THREE.Color(0x171a1b)
     const camera = new THREE.PerspectiveCamera(35, 1, 0.1, 5000)
+    camera.up.set(0, 0, 1)
     camera.position.set(dieWidth * .85, -dieHeight * 1.35, Math.max(dieWidth, dieHeight) * 1.45)
     const renderer = new THREE.WebGLRenderer({ antialias: true })
     renderer.setPixelRatio(Math.min(2, window.devicePixelRatio))
@@ -167,6 +168,8 @@ export default function Preview({ surfaces, heightmap, settings, viewMode, visib
     mount.appendChild(renderer.domElement)
     const controls = new OrbitControls(camera, renderer.domElement)
     controls.enableDamping = true
+    controls.minPolarAngle = 0.05
+    controls.maxPolarAngle = Math.PI / 2 - 0.02
     controls.target.set(0, 0, 0)
 
     const clippingPlane = new THREE.Plane(new THREE.Vector3(1, 0, 0), 0)
