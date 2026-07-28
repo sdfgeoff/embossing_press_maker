@@ -1,5 +1,5 @@
 import * as THREE from 'three'
-import { computeSphericalEnvelope } from './gpuEnvelope'
+import { computeSphericalEnvelope, type TimingEntry } from './gpuEnvelope'
 
 const clamp = (value, min, max) => Math.max(min, Math.min(max, value))
 
@@ -23,6 +23,7 @@ export function sampleCurve(points, x) {
 }
 
 export function readHeightmap(image, settings, curvePoints) {
+  const totalStart = performance.now()
   const pixelPitchX = settings.imageWidth / image.width
   const pixelPitchY = settings.imageHeight / image.height
   const pitch = Math.max(settings.tolerance, pixelPitchX, pixelPitchY)
@@ -69,7 +70,13 @@ export function readHeightmap(image, settings, curvePoints) {
       values[row * cols + col] = value
     }
   }
-  return { values, cols, rows, histogram, pitchX: settings.dieWidth / (cols - 1), pitchY: settings.dieHeight / (rows - 1) }
+  const result = { values, cols, rows, histogram, pitchX: settings.dieWidth / (cols - 1), pitchY: settings.dieHeight / (rows - 1) }
+  console.table([{
+    phase: 'Decode + sample heightmap',
+    'time (ms)': Number((performance.now() - totalStart).toFixed(2)),
+    details: `${image.width} x ${image.height} image -> ${cols} x ${rows} surface`,
+  }])
+  return result
 }
 
 function displacements(heightmap, settings) {
@@ -81,7 +88,7 @@ function displacements(heightmap, settings) {
   return result
 }
 
-function sphericalDilation(heightmap, heights, radius) {
+function sphericalDilation(heightmap, heights, radius, timings: TimingEntry[], label: string) {
   return computeSphericalEnvelope({
     heights,
     cols: heightmap.cols,
@@ -89,14 +96,18 @@ function sphericalDilation(heightmap, heights, radius) {
     pitchX: heightmap.pitchX,
     pitchY: heightmap.pitchY,
     radius,
-  })
+  }, timings, label)
 }
 
-function sphericalErosion(heightmap, heights, radius) {
+function sphericalErosion(heightmap, heights, radius, timings: TimingEntry[], label: string) {
+  const inversionStart = performance.now()
   const inverted = new Float32Array(heights.length)
   for (let index = 0; index < heights.length; index += 1) inverted[index] = -heights[index]
-  const dilated = sphericalDilation(heightmap, inverted, radius)
+  timings.push({ phase: `${label}: invert input`, durationMs: performance.now() - inversionStart })
+  const dilated = sphericalDilation(heightmap, inverted, radius, timings, label)
+  const restoreStart = performance.now()
   for (let index = 0; index < dilated.length; index += 1) dilated[index] = -dilated[index]
+  timings.push({ phase: `${label}: restore sign`, durationMs: performance.now() - restoreStart })
   return dilated
 }
 
@@ -172,18 +183,24 @@ function makeLayer(heightmap, topPoints, bottomPoints, material, name) {
 }
 
 export function buildMeshes(heightmap, settings) {
+  const totalStart = performance.now()
+  const timings: TimingEntry[] = []
+  const displacementStart = performance.now()
   const z = displacements(heightmap, settings)
+  timings.push({ phase: 'Map height values to Z', durationMs: performance.now() - displacementStart })
   let maleZ = z
   let femaleZ = z
   if (settings.surfaceReference === 'top') {
-    maleZ = sphericalErosion(heightmap, z, settings.materialThickness)
+    maleZ = sphericalErosion(heightmap, z, settings.materialThickness, timings, 'bottom erosion')
   } else if (settings.surfaceReference === 'midpoint') {
     const halfThickness = settings.materialThickness / 2
-    maleZ = sphericalErosion(heightmap, z, halfThickness)
-    femaleZ = sphericalDilation(heightmap, z, halfThickness)
+    maleZ = sphericalErosion(heightmap, z, halfThickness, timings, 'bottom erosion')
+    femaleZ = sphericalDilation(heightmap, z, halfThickness, timings, 'top dilation')
   } else {
-    femaleZ = sphericalDilation(heightmap, z, settings.materialThickness)
+    femaleZ = sphericalDilation(heightmap, z, settings.materialThickness, timings, 'top dilation')
   }
+
+  const pointsStart = performance.now()
   const malePoints = []
   const femalePoints = []
   const sheetTopPoints = []
@@ -200,6 +217,7 @@ export function buildMeshes(heightmap, settings) {
       sheetTopPoints.push(new THREE.Vector3(x, y, femaleZ[index]))
     }
   }
+  timings.push({ phase: 'Create surface point arrays', durationMs: performance.now() - pointsStart })
   const maleMaterial = new THREE.MeshStandardMaterial({ color: 0xbec5ca, roughness: 0.32, metalness: 0.68, side: THREE.DoubleSide })
   const femaleMaterial = new THREE.MeshStandardMaterial({ color: 0x6f7c83, roughness: 0.38, metalness: 0.58, side: THREE.DoubleSide })
   const sheetMaterial = new THREE.MeshStandardMaterial({ color: 0xd5a947, roughness: 0.6, metalness: 0.05, side: THREE.DoubleSide })
@@ -209,9 +227,24 @@ export function buildMeshes(heightmap, settings) {
     minZ = Math.min(minZ, maleZ[index])
     maxFemaleZ = Math.max(maxFemaleZ, femalePoints[index].z)
   }
+  const maleStart = performance.now()
   const male = makeSolidSurface(heightmap, malePoints, minZ - settings.backingThickness, maleMaterial, 'male')
+  timings.push({ phase: 'Build male indexed mesh + normals', durationMs: performance.now() - maleStart })
+  const femaleStart = performance.now()
   const female = makeSolidSurface(heightmap, femalePoints, maxFemaleZ + settings.backingThickness, femaleMaterial, 'female')
+  timings.push({ phase: 'Build female indexed mesh + normals', durationMs: performance.now() - femaleStart })
+  const sheetStart = performance.now()
   const sheet = makeLayer(heightmap, sheetTopPoints, sheetBottomPoints, sheetMaterial, 'sheet')
+  timings.push({ phase: 'Build material indexed mesh + normals', durationMs: performance.now() - sheetStart })
+  const totalDuration = performance.now() - totalStart
+  console.groupCollapsed(`Embossing geometry: ${totalDuration.toFixed(1)} ms (${settings.surfaceReference})`)
+  console.table(timings.map(({ phase, durationMs, details = '' }) => ({
+    phase,
+    'time (ms)': Number(durationMs.toFixed(2)),
+    details,
+  })))
+  console.log(`Total: ${totalDuration.toFixed(2)} ms; surface: ${heightmap.cols} x ${heightmap.rows}`)
+  console.groupEnd()
   return { male, female, sheet, stats: { vertices: heightmap.cols * heightmap.rows, cols: heightmap.cols, rows: heightmap.rows } }
 }
 

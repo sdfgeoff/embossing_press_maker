@@ -68,11 +68,20 @@ export type EnvelopeInput = {
   radius: number
 }
 
-export function computeSphericalEnvelope(input: EnvelopeInput) {
+export type TimingEntry = {
+  phase: string
+  durationMs: number
+  details?: string
+}
+
+export function computeSphericalEnvelope(input: EnvelopeInput, timings?: TimingEntry[], label = 'envelope') {
+  const contextStart = performance.now()
   const context = getContext()
   const envelopeProgram = getProgram(context)
+  timings?.push({ phase: `${label}: context + shader`, durationMs: performance.now() - contextStart })
   if (!canvas) throw new GpuEnvelopeError('The WebGL envelope canvas is unavailable.')
 
+  const setupStart = performance.now()
   canvas.width = input.cols
   canvas.height = input.rows
   const framebuffer = context.createFramebuffer()
@@ -101,7 +110,13 @@ export function computeSphericalEnvelope(input: EnvelopeInput) {
       samples[index * 3 + 2] = input.heights[index]
     }
   }
+  timings?.push({
+    phase: `${label}: prepare instance data`,
+    durationMs: performance.now() - setupStart,
+    details: `${input.heights.length.toLocaleString()} spheres`,
+  })
 
+  const framebufferStart = performance.now()
   context.bindTexture(context.TEXTURE_2D, colorTexture)
   context.texParameteri(context.TEXTURE_2D, context.TEXTURE_MIN_FILTER, context.NEAREST)
   context.texParameteri(context.TEXTURE_2D, context.TEXTURE_MAG_FILTER, context.NEAREST)
@@ -132,7 +147,13 @@ export function computeSphericalEnvelope(input: EnvelopeInput) {
   context.enableVertexAttribArray(1)
   context.vertexAttribPointer(1, 3, context.FLOAT, false, 0, 0)
   context.vertexAttribDivisor(1, 1)
+  timings?.push({
+    phase: `${label}: allocate + upload GPU data`,
+    durationMs: performance.now() - framebufferStart,
+    details: `${input.cols} x ${input.rows}`,
+  })
 
+  const drawStart = performance.now()
   context.viewport(0, 0, input.cols, input.rows)
   context.useProgram(envelopeProgram)
   const extentX = input.radius + input.pitchX * 0.5
@@ -155,12 +176,23 @@ export function computeSphericalEnvelope(input: EnvelopeInput) {
   context.clearColor(minHeight, 0, 0, 1)
   context.clear(context.COLOR_BUFFER_BIT | context.DEPTH_BUFFER_BIT)
   context.drawArraysInstanced(context.TRIANGLES, 0, 6, input.heights.length)
+  timings?.push({ phase: `${label}: submit sphere draw`, durationMs: performance.now() - drawStart })
 
+  const readbackStart = performance.now()
   const rgba = new Float32Array(input.heights.length * 4)
   context.readPixels(0, 0, input.cols, input.rows, context.RGBA, context.FLOAT, rgba)
+  timings?.push({
+    phase: `${label}: GPU completion + readPixels`,
+    durationMs: performance.now() - readbackStart,
+    details: `${(rgba.byteLength / 1024 / 1024).toFixed(1)} MiB`,
+  })
+
+  const unpackStart = performance.now()
   const result = new Float32Array(input.heights.length)
   for (let index = 0; index < result.length; index += 1) result[index] = rgba[index * 4]
+  timings?.push({ phase: `${label}: unpack float texture`, durationMs: performance.now() - unpackStart })
 
+  const cleanupStart = performance.now()
   context.bindFramebuffer(context.FRAMEBUFFER, null)
   context.bindVertexArray(null)
   context.deleteBuffer(cornerBuffer)
@@ -169,6 +201,7 @@ export function computeSphericalEnvelope(input: EnvelopeInput) {
   context.deleteFramebuffer(framebuffer)
   context.deleteTexture(colorTexture)
   context.deleteRenderbuffer(depthBuffer)
+  timings?.push({ phase: `${label}: release GPU resources`, durationMs: performance.now() - cleanupStart })
   return result
 }
 import sphericalEnvelopeVertexShader from './shaders/sphericalEnvelope.vert?raw'

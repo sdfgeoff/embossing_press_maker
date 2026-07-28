@@ -36,8 +36,27 @@ export default function App() {
   const [cut, setCut] = useState({ enabled: false, position: 0, angle: 0 })
   const [busy, setBusy] = useState(false)
   const update = (key) => (value) => setSettings((current) => ({ ...current, [key]: value }))
-  const meshSettings = useDebouncedValue(settings, 300)
-  const geometryPending = meshSettings !== settings
+  const geometrySettings = useMemo(() => ({
+    materialThickness: settings.materialThickness,
+    dieWidth: settings.dieWidth,
+    dieHeight: settings.dieHeight,
+    depth: settings.depth,
+    neutral: settings.neutral,
+    backingThickness: settings.backingThickness,
+    invert: settings.invert,
+    surfaceReference: settings.surfaceReference,
+  }), [
+    settings.materialThickness,
+    settings.dieWidth,
+    settings.dieHeight,
+    settings.depth,
+    settings.neutral,
+    settings.backingThickness,
+    settings.invert,
+    settings.surfaceReference,
+  ])
+  const meshSettings = useDebouncedValue(geometrySettings, 300)
+  const geometryPending = meshSettings !== geometrySettings
   const samplingSettings = useMemo(() => ({
     imageWidth: settings.imageWidth,
     imageHeight: settings.imageHeight,
@@ -93,17 +112,29 @@ export default function App() {
   const exportZip = async () => {
     if (!meshes) return
     setBusy(true)
+    const totalStart = performance.now()
+    const timings = []
     try {
       const zip = new JSZip()
+      const maleStart = performance.now()
       zip.file('embossing-die-male.stl', geometryToBinaryStl(meshes.male.geometry, 'male'))
+      timings.push({ phase: 'Serialize male STL', 'time (ms)': Number((performance.now() - maleStart).toFixed(2)) })
+      const femaleStart = performance.now()
       zip.file('embossing-die-female.stl', geometryToBinaryStl(meshes.female.geometry, 'female'))
+      timings.push({ phase: 'Serialize female STL', 'time (ms)': Number((performance.now() - femaleStart).toFixed(2)) })
+      const zipStart = performance.now()
       const blob = await zip.generateAsync({ type: 'blob', compression: 'DEFLATE' })
+      timings.push({ phase: 'Compress ZIP', 'time (ms)': Number((performance.now() - zipStart).toFixed(2)) })
       const url = URL.createObjectURL(blob)
       const link = document.createElement('a')
       link.href = url
       link.download = 'embossing-dies.zip'
       link.click()
       URL.revokeObjectURL(url)
+      console.groupCollapsed(`Embossing export: ${(performance.now() - totalStart).toFixed(1)} ms`)
+      console.table(timings)
+      console.log(`ZIP size: ${(blob.size / 1024 / 1024).toFixed(2)} MiB`)
+      console.groupEnd()
     } finally {
       setBusy(false)
     }
