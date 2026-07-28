@@ -224,6 +224,10 @@ export default function App() {
             <div className="segmented">
               {['side', 'assembled'].map((mode) => <button key={mode} className={viewMode === mode ? 'active' : ''} onClick={() => setViewMode(mode)}>{mode === 'side' ? 'Side by side' : 'Embossed sheet'}</button>)}
             </div>
+            <label className="explode-control">
+              <span>Explode {explode.toFixed(1)} mm</span>
+              <input name="explode-distance" type="range" min="0" max={Math.max(5, settings.materialThickness * 2)} step=".1" value={explode} disabled={viewMode !== 'assembled'} onChange={(event) => setExplode(Number(event.target.value))} />
+            </label>
             <div className="visibility">
               {Object.keys(visibility).map((key) => <button key={key} className={visibility[key] ? 'active' : ''} title={`Toggle ${key}`} onClick={() => setVisibility((current) => ({ ...current, [key]: !current[key] }))}>{visibility[key] ? <Eye size={15} /> : <EyeOff size={15} />} {key}</button>)}
             </div>
@@ -236,7 +240,6 @@ export default function App() {
             <button className={cut.enabled ? 'icon-button active' : 'icon-button'} title="Toggle section plane" onClick={() => setCut((current) => ({ ...current, enabled: !current.enabled }))}><ScanLine size={18} /></button>
             <label><span>Section position</span><input name="section-position" type="range" min={-Math.max(settings.dieWidth, settings.dieHeight) / 2} max={Math.max(settings.dieWidth, settings.dieHeight) / 2} step=".1" value={cut.position} onChange={(event) => setCut((current) => ({ ...current, position: Number(event.target.value) }))} /></label>
             <label><span>Rotation</span><input name="section-rotation" type="range" min="0" max="180" value={cut.angle * 180 / Math.PI} onChange={(event) => setCut((current) => ({ ...current, angle: Number(event.target.value) * Math.PI / 180 }))} /></label>
-            <label><span>Explode {explode.toFixed(1)} mm</span><input name="explode-distance" type="range" min="0" max={Math.max(5, settings.materialThickness * 2)} step=".1" value={explode} disabled={viewMode !== 'assembled'} onChange={(event) => setExplode(Number(event.target.value))} /></label>
             <button className="icon-button" title="Reset camera and section" onClick={() => setCut({ enabled: false, position: 0, angle: 0 })}><RotateCcw size={17} /></button>
           </div>
           <div className="curve-panel">
