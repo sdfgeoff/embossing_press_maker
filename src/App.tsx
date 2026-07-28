@@ -19,11 +19,23 @@ const defaults = {
   invert: false,
 }
 
-function NumberField({ label, value, onChange, min, max, step = 0.1, suffix = 'mm' }) {
+type NumberFieldProps = {
+  label: string
+  value: number
+  onChange: (value: number) => void
+  min?: number
+  max?: number
+  step?: number | 'any'
+  suffix?: string
+  readOnly?: boolean
+}
+
+function NumberField({ label, value, onChange, min, max, step = 'any', suffix = 'mm', readOnly = false }: NumberFieldProps) {
+  const id = `field-${label.toLowerCase().replaceAll(' ', '-')}`
   return (
-    <label className="field">
+    <label className="field" htmlFor={id}>
       <span>{label}</span>
-      <span className="input-shell"><input type="number" value={value} min={min} max={max} step={step} onChange={(event) => onChange(Number(event.target.value))} /><b>{suffix}</b></span>
+      <span className="input-shell"><input id={id} name={id} type="number" value={value} min={min} max={max} step={step} readOnly={readOnly} onChange={(event) => onChange(Number(event.target.value))} /><b>{suffix}</b></span>
     </label>
   )
 }
@@ -92,16 +104,16 @@ export default function App() {
           <div className="panel-section upload-section">
             <div className="section-heading"><span>01</span><h2>Source image</h2></div>
             <label className={`drop-zone ${imageUrl ? 'has-image' : ''}`}>
-              <input type="file" accept="image/*" onChange={(event) => loadFile(event.target.files[0])} />
+              <input id="heightmap-file" name="heightmap-file" type="file" accept="image/*" onChange={(event) => loadFile(event.target.files?.[0])} />
               {imageUrl ? <><img src={imageUrl} alt="" /><span>{fileName}</span></> : <><ImagePlus size={26} /><strong>Choose a heightmap</strong><span>PNG, JPG or browser-supported image</span></>}
             </label>
-            <label className="toggle-row"><span><b>Reverse height</b><small>Swap light and dark elevation</small></span><input type="checkbox" checked={settings.invert} onChange={(event) => update('invert')(event.target.checked)} /></label>
+            <label className="toggle-row"><span><b>Reverse height</b><small>Swap light and dark elevation</small></span><input name="reverse-height" type="checkbox" checked={settings.invert} onChange={(event) => update('invert')(event.target.checked)} /></label>
           </div>
           <div className="panel-section">
             <div className="section-heading"><span>02</span><h2>Dimensions</h2></div>
             <div className="field-grid">
               <NumberField label="Image width" value={settings.imageWidth} onChange={(value) => setSettings((current) => ({ ...current, imageWidth: value, imageHeight: image ? Number((value * image.height / image.width).toFixed(2)) : current.imageHeight }))} min={0.1} />
-              <NumberField label="Image height" value={settings.imageHeight} onChange={() => {}} min={0.1} />
+              <NumberField label="Image height" value={settings.imageHeight} onChange={() => {}} min={0.1} readOnly />
               <NumberField label="Die width" value={settings.dieWidth} onChange={update('dieWidth')} min={1} />
               <NumberField label="Die height" value={settings.dieHeight} onChange={update('dieHeight')} min={1} />
             </div>
@@ -139,8 +151,8 @@ export default function App() {
           </div>
           <div className="inspection-bar">
             <button className={cut.enabled ? 'icon-button active' : 'icon-button'} title="Toggle section plane" onClick={() => setCut((current) => ({ ...current, enabled: !current.enabled }))}><ScanLine size={18} /></button>
-            <label><span>Section position</span><input type="range" min={-Math.max(settings.dieWidth, settings.dieHeight) / 2} max={Math.max(settings.dieWidth, settings.dieHeight) / 2} step=".1" value={cut.position} onChange={(event) => setCut((current) => ({ ...current, position: Number(event.target.value) }))} /></label>
-            <label><span>Rotation</span><input type="range" min="0" max="180" value={cut.angle * 180 / Math.PI} onChange={(event) => setCut((current) => ({ ...current, angle: Number(event.target.value) * Math.PI / 180 }))} /></label>
+            <label><span>Section position</span><input name="section-position" type="range" min={-Math.max(settings.dieWidth, settings.dieHeight) / 2} max={Math.max(settings.dieWidth, settings.dieHeight) / 2} step=".1" value={cut.position} onChange={(event) => setCut((current) => ({ ...current, position: Number(event.target.value) }))} /></label>
+            <label><span>Rotation</span><input name="section-rotation" type="range" min="0" max="180" value={cut.angle * 180 / Math.PI} onChange={(event) => setCut((current) => ({ ...current, angle: Number(event.target.value) * Math.PI / 180 }))} /></label>
             <button className="icon-button" title="Reset camera and section" onClick={() => setCut({ enabled: false, position: 0, angle: 0 })}><RotateCcw size={17} /></button>
           </div>
           <div className="curve-panel">

@@ -44,7 +44,7 @@ export default function CurveEditor({ points, onChange, histogram }) {
     <svg ref={svgRef} className="curve-editor" viewBox={`0 0 ${size.width} ${size.height}`} onDoubleClick={addPoint} role="img" aria-label="Height transfer curve">
       <rect x={margin} y={margin} width={size.width - margin * 2} height={size.height - margin * 2} className="curve-bg" />
       {[0, .25, .5, .75, 1].map((value) => <path key={value} d={`M ${margin} ${margin + value * (size.height - margin * 2)} H ${size.width - margin} M ${margin + value * (size.width - margin * 2)} ${margin} V ${size.height - margin}`} className="curve-grid" />)}
-      {Array.from(histogram).map((value, index) => {
+      {Array.from<number>(histogram).map((value, index) => {
         const barWidth = (size.width - margin * 2) / histogram.length
         const barHeight = value / maxHistogram * (size.height - margin * 2) * .75
         return <rect key={index} x={margin + index * barWidth} y={size.height - margin - barHeight} width={barWidth + .5} height={barHeight} className="histogram-bar" />
