@@ -3,6 +3,8 @@ import JSZip from 'jszip'
 import { Box, Download, Eye, EyeOff, ImagePlus, RotateCcw, ScanLine, TriangleAlert } from 'lucide-react'
 import CurveEditor from './CurveEditor'
 import Preview from './Preview'
+import NumberField from './components/NumberField'
+import SourceImagePanel from './components/SourceImagePanel'
 import { buildMeshes, geometryToBinaryStl, readHeightmap } from './geometry'
 import { GpuEnvelopeError } from './gpuEnvelope'
 
@@ -18,27 +20,6 @@ const defaults = {
   tolerance: 0.1,
   vertexLimit: 2000000,
   invert: false,
-}
-
-type NumberFieldProps = {
-  label: string
-  value: number
-  onChange: (value: number) => void
-  min?: number
-  max?: number
-  step?: number | 'any'
-  suffix?: string
-  readOnly?: boolean
-}
-
-function NumberField({ label, value, onChange, min, max, step = 'any', suffix = 'mm', readOnly = false }: NumberFieldProps) {
-  const id = `field-${label.toLowerCase().replaceAll(' ', '-')}`
-  return (
-    <label className="field" htmlFor={id}>
-      <span>{label}</span>
-      <span className="input-shell"><input id={id} name={id} type="number" value={value} min={min} max={max} step={step} readOnly={readOnly} onChange={(event) => onChange(Number(event.target.value))} /><b>{suffix}</b></span>
-    </label>
-  )
 }
 
 export default function App() {
@@ -113,14 +94,7 @@ export default function App() {
       </header>
       <section className="workspace">
         <aside className="controls">
-          <div className="panel-section upload-section">
-            <div className="section-heading"><span>01</span><h2>Source image</h2></div>
-            <label className={`drop-zone ${imageUrl ? 'has-image' : ''}`}>
-              <input id="heightmap-file" name="heightmap-file" type="file" accept="image/*" onChange={(event) => loadFile(event.target.files?.[0])} />
-              {imageUrl ? <><img src={imageUrl} alt="" /><span>{fileName}</span></> : <><ImagePlus size={26} /><strong>Choose a heightmap</strong><span>PNG, JPG or browser-supported image</span></>}
-            </label>
-            <label className="toggle-row"><span><b>Reverse height</b><small>Swap light and dark elevation</small></span><input name="reverse-height" type="checkbox" checked={settings.invert} onChange={(event) => update('invert')(event.target.checked)} /></label>
-          </div>
+          <SourceImagePanel imageUrl={imageUrl} fileName={fileName} inverted={settings.invert} onFile={loadFile} onInvert={update('invert')} />
           <div className="panel-section">
             <div className="section-heading"><span>02</span><h2>Dimensions</h2></div>
             <div className="field-grid">
