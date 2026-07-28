@@ -7,6 +7,7 @@ import NumberField from './components/NumberField'
 import SourceImagePanel from './components/SourceImagePanel'
 import { buildMeshes, geometryToBinaryStl, readHeightmap } from './geometry'
 import { GpuEnvelopeError } from './gpuEnvelope'
+import useDebouncedValue from './hooks/useDebouncedValue'
 
 const defaults = {
   materialThickness: 1,
@@ -35,6 +36,27 @@ export default function App() {
   const [cut, setCut] = useState({ enabled: false, position: 0, angle: 0 })
   const [busy, setBusy] = useState(false)
   const update = (key) => (value) => setSettings((current) => ({ ...current, [key]: value }))
+  const meshSettings = useDebouncedValue(settings, 300)
+  const geometryPending = meshSettings !== settings
+  const samplingSettings = useMemo(() => ({
+    imageWidth: settings.imageWidth,
+    imageHeight: settings.imageHeight,
+    dieWidth: settings.dieWidth,
+    dieHeight: settings.dieHeight,
+    tolerance: settings.tolerance,
+    vertexLimit: settings.vertexLimit,
+    neutral: settings.neutral,
+    invert: settings.invert,
+  }), [
+    settings.imageWidth,
+    settings.imageHeight,
+    settings.dieWidth,
+    settings.dieHeight,
+    settings.tolerance,
+    settings.vertexLimit,
+    settings.neutral,
+    settings.invert,
+  ])
 
   const loadFile = (file) => {
     if (!file || !file.type.startsWith('image/')) return
@@ -51,21 +73,21 @@ export default function App() {
 
   useEffect(() => {
     if (!image) return
-    const timer = setTimeout(() => setHeightmap(readHeightmap(image, settings, curve)), 120)
+    const timer = setTimeout(() => setHeightmap(readHeightmap(image, samplingSettings, curve)), 180)
     return () => clearTimeout(timer)
-  }, [image, settings, curve])
+  }, [image, samplingSettings, curve])
 
   const meshResult = useMemo(() => {
     if (!heightmap) return { meshes: null, error: '' }
     try {
-      return { meshes: buildMeshes(heightmap, settings), error: '' }
+      return { meshes: buildMeshes(heightmap, meshSettings), error: '' }
     } catch (error) {
       const message = error instanceof GpuEnvelopeError
         ? error.message
         : 'The GPU envelope calculation failed. Try reducing the mesh resolution or restarting the browser.'
       return { meshes: null, error: message }
     }
-  }, [heightmap, settings])
+  }, [heightmap, meshSettings])
   const meshes = meshResult.meshes
 
   const exportZip = async () => {
@@ -91,7 +113,7 @@ export default function App() {
     <main>
       <header>
         <div className="brand"><span className="brand-mark"><Box size={19} /></span><div><strong>RELIEF PRESS</strong><small>Embossing die generator</small></div></div>
-        <button className="primary" disabled={!meshes || busy} onClick={exportZip}><Download size={17} />{busy ? 'Packaging…' : 'Export STL pair'}</button>
+        <button className="primary" disabled={!meshes || busy || geometryPending} onClick={exportZip}><Download size={17} />{busy ? 'Packaging…' : geometryPending ? 'Updating…' : 'Export STL pair'}</button>
       </header>
       <section className="workspace">
         <aside className="controls">
@@ -151,7 +173,7 @@ export default function App() {
           </div>
           <div className="preview">
             {meshes ? <Preview meshes={meshes} viewMode={viewMode} visibility={visibility} cut={cut} dieWidth={settings.dieWidth} dieHeight={settings.dieHeight} /> : <div className="empty-state">{meshResult.error ? <><TriangleAlert size={34} /><strong>GPU geometry unavailable</strong><span>{meshResult.error}</span></> : <><ImagePlus size={34} /><strong>Load a heightmap to begin</strong><span>The paired dies will appear here.</span></>}</div>}
-            {meshes && <div className="mesh-stats"><b>{meshes.stats.vertices.toLocaleString()}</b> surface vertices <span>{meshes.stats.cols} × {meshes.stats.rows}</span></div>}
+            {meshes && <div className="mesh-stats"><b>{meshes.stats.vertices.toLocaleString()}</b> surface vertices <span>{meshes.stats.cols} × {meshes.stats.rows}</span>{geometryPending && <span>Updating…</span>}</div>}
           </div>
           <div className="inspection-bar">
             <button className={cut.enabled ? 'icon-button active' : 'icon-button'} title="Toggle section plane" onClick={() => setCut((current) => ({ ...current, enabled: !current.enabled }))}><ScanLine size={18} /></button>
