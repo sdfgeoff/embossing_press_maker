@@ -41,6 +41,10 @@ h2 { font-size: 13px; margin: 0; }
 .toggle-row b { font-size: 11px; }
 .toggle-row small { font-size: 9px; color: #777d7b; margin-top: 2px; }
 .toggle-row input { accent-color: #c94e35; }
+.slope-limit { display: grid; grid-template-columns: minmax(0, 1fr) 1fr; align-items: end; gap: 10px; margin-top: 14px; }
+.slope-limit .toggle-row { margin: 0 0 2px; }
+.field:has(input:disabled) { opacity: .45; }
+.field input:disabled { cursor: not-allowed; }
 .field-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px 10px; }
 .surface-reference { display: grid; grid-template-columns: repeat(3, 1fr); gap: 3px; padding: 3px; margin-bottom: 13px; background: #dedfda; }
 .surface-reference button { min-width: 0; border: 0; padding: 7px 4px; background: transparent; color: #666c6a; font-size: 10px; }

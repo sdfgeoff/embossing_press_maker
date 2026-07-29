@@ -1,6 +1,7 @@
 import * as THREE from 'three'
 import { computeSphericalEnvelope, type TimingEntry } from './gpuEnvelope'
 import { prepareCurve, samplePreparedCurve } from './curve'
+import { limitHeightfieldSlope } from './slopeLimit'
 
 const clamp = (value, min, max) => Math.max(min, Math.min(max, value))
 
@@ -196,8 +197,25 @@ export function buildSurfaces(heightmap, settings) {
   const totalStart = performance.now()
   const timings: TimingEntry[] = []
   const displacementStart = performance.now()
-  const z = displacements(heightmap, settings)
+  let z = displacements(heightmap, settings)
   timings.push({ phase: 'Map height values to Z', durationMs: performance.now() - displacementStart })
+  if (settings.limitSlope) {
+    const slopeStart = performance.now()
+    const limited = limitHeightfieldSlope(
+      z,
+      heightmap.cols,
+      heightmap.rows,
+      heightmap.pitchX,
+      heightmap.pitchY,
+      settings.maximumSlope,
+    )
+    z = limited.heights
+    timings.push({
+      phase: 'Limit reference-surface slope',
+      durationMs: performance.now() - slopeStart,
+      details: `${settings.maximumSlope} deg requested, ${(Math.atan(limited.maximumEdgeSlope) * 180 / Math.PI).toFixed(2)} deg maximum edge, ${limited.iterations} passes`,
+    })
+  }
   let maleZ = z
   let femaleZ = z
   if (settings.surfaceReference === 'top') {

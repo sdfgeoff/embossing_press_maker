@@ -24,6 +24,8 @@ const defaults = {
   vertexLimit: 2000000,
   invert: false,
   surfaceReference: 'bottom',
+  limitSlope: false,
+  maximumSlope: 45,
 }
 
 export default function App() {
@@ -52,6 +54,8 @@ export default function App() {
     backingThickness: settings.backingThickness,
     invert: settings.invert,
     surfaceReference: settings.surfaceReference,
+    limitSlope: settings.limitSlope,
+    maximumSlope: settings.maximumSlope,
   }), [
     settings.materialThickness,
     settings.dieWidth,
@@ -61,6 +65,8 @@ export default function App() {
     settings.backingThickness,
     settings.invert,
     settings.surfaceReference,
+    settings.limitSlope,
+    settings.maximumSlope,
   ])
   const meshSettings = useDebouncedValue(geometrySettings, 100)
   const geometryPending = meshSettings !== geometrySettings
@@ -216,6 +222,22 @@ export default function App() {
               <NumberField label="Emboss depth" value={settings.depth} onChange={update('depth')} min={0} />
               <NumberField label="Backing" value={settings.backingThickness} onChange={update('backingThickness')} min={1} />
               <NumberField label="Neutral level" value={settings.neutral} onChange={update('neutral')} min={0} max={1} step={0.01} suffix="0–1" />
+            </div>
+            <div className="slope-limit">
+              <label className="toggle-row">
+                <span><b>Limit maximum slope</b><small>Adjust peaks and valleys before die clearance</small></span>
+                <input type="checkbox" checked={settings.limitSlope} onChange={(event) => update('limitSlope')(event.target.checked)} />
+              </label>
+              <NumberField
+                label="Maximum slope"
+                value={settings.maximumSlope}
+                onChange={update('maximumSlope')}
+                min={0.1}
+                max={89.9}
+                step={0.1}
+                suffix="deg"
+                disabled={!settings.limitSlope}
+              />
             </div>
           </div>
           <div className="panel-section">

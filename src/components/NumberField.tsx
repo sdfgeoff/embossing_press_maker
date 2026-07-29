@@ -7,6 +7,7 @@ type NumberFieldProps = {
   step?: number | 'any'
   suffix?: string
   readOnly?: boolean
+  disabled?: boolean
 }
 
 export default function NumberField({
@@ -18,6 +19,7 @@ export default function NumberField({
   step = 'any',
   suffix = 'mm',
   readOnly = false,
+  disabled = false,
 }: NumberFieldProps) {
   const id = `field-${label.toLowerCase().replaceAll(' ', '-')}`
   return (
@@ -33,6 +35,7 @@ export default function NumberField({
           max={max}
           step={step}
           readOnly={readOnly}
+          disabled={disabled}
           onChange={(event) => onChange(Number(event.target.value))}
         />
         <b>{suffix}</b>
